@@ -1,0 +1,25 @@
+# Memos — excluded from version control (local data only)
+memos/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Raw fetched filings
+raw/
+
+# Logs
+logs/
+
+# macOS
+.DS_Store
+
+# Environment
+.env
+*.env

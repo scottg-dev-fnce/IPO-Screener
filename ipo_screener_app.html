@@ -1,0 +1,2380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPO Screener — ECM Due Diligence</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=JetBrains+Mono:wght@300;400;500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
+
+  :root {
+    --bg:        #0a0b0e;
+    --surface:   #111318;
+    --surface2:  #171b22;
+    --border:    #1e2530;
+    --border2:   #2a3040;
+    --gold:      #c9a84c;
+    --gold-dim:  #8a6e30;
+    --green:     #2ecc8a;
+    --amber:     #e8a935;
+    --red:       #e05252;
+    --text:      #d8dde8;
+    --text-dim:  #6b7585;
+    --text-mid:  #9aa3b2;
+    --accent:    #3b82f6;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    gap: 16px;
+  }
+  .topbar-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .topbar-brand h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.02em;
+  }
+  .topbar-brand span {
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  /* View toggle tabs */
+  .topbar-nav {
+    display: flex;
+    gap: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    padding: 3px;
+  }
+  .nav-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .nav-btn:hover { color: var(--text); background: var(--border); }
+  .nav-btn.active { background: var(--border2); color: var(--gold); }
+  /* Topbar right area */
+  .topbar-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-dim);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .topbar-meta .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+    display: inline-block;
+    margin-right: 6px;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; }
+    50%      { opacity:.3; }
+  }
+  .export-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text-mid);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .export-btn:hover { border-color: var(--gold-dim); color: var(--gold); }
+
+  /* ── MAIN LAYOUT ── */
+  .main-layout {
+    display: grid;
+    grid-template-columns: 240px 320px 1fr;
+    flex: 1;
+    overflow: hidden;
+    height: calc(100vh - 56px);
+  }
+
+  /* ── SIDEBAR: CALENDAR ── */
+  .sidebar-calendar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-calendar h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cal-month {
+    padding: 12px 20px 4px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--gold-dim);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .cal-day {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .cal-day:hover { background: var(--surface2); border-left-color: var(--border2); }
+  .cal-day.active { background: var(--surface2); border-left-color: var(--gold); }
+  .cal-day-label { display: flex; flex-direction: column; gap: 2px; }
+  .cal-day-date { font-size: 12px; color: var(--text); font-weight: 500; }
+  .cal-day.active .cal-day-date { color: var(--gold); }
+  .cal-day-dow { font-size: 10px; color: var(--text-dim); letter-spacing: 0.06em; }
+  .cal-day-badge { display: flex; gap: 4px; align-items: center; }
+  .badge {
+    font-size: 10px; font-weight: 500;
+    padding: 1px 5px; border-radius: 3px; letter-spacing: 0.04em;
+  }
+  .badge-count { background: var(--border2); color: var(--text-mid); }
+  .badge-uw    { background: rgba(46,204,138,.15); color: var(--green); }
+  .badge-cond  { background: rgba(232,169,53,.15); color: var(--amber); }
+  .badge-pass  { background: rgba(224,82,82,.12);  color: var(--red); }
+  .badge-amd   { background: rgba(59,130,246,.15); color: var(--accent); }
+
+  /* Watchlist section */
+  .watchlist-section {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+  }
+  .watchlist-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px 10px;
+  }
+  .watchlist-header h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: none;
+    padding: 0;
+  }
+  .watchlist-count {
+    font-size: 10px;
+    background: rgba(201,168,76,.12);
+    color: var(--gold-dim);
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+  .watchlist-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 6px 20px;
+    cursor: pointer;
+    transition: background 0.12s;
+    gap: 8px;
+  }
+  .watchlist-item:hover { background: var(--surface2); }
+  .watchlist-item-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .watchlist-name { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+  .watchlist-date { font-size: 9px; color: var(--text-dim); }
+  .watchlist-unstar {
+    background: none; border: none; color: var(--gold-dim); cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 0; flex-shrink: 0;
+    opacity: 0.5; transition: opacity 0.15s;
+  }
+  .watchlist-unstar:hover { opacity: 1; }
+  .watchlist-empty { padding: 8px 20px 12px; font-size: 10px; color: var(--text-dim); }
+
+  /* Sessions section */
+  .sessions-section { flex: 1; overflow-y: auto; }
+  #calendar-list { padding-bottom: 20px; }
+
+  /* ── PANEL: FILING LIST ── */
+  .panel-list {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-list-header {
+    padding: 16px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .panel-list-header h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .panel-list-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+  }
+  .stat-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 6px;
+    text-align: center;
+  }
+  .stat-box .stat-val { font-size: 15px; font-weight: 500; display: block; line-height: 1.2; }
+  .stat-box .stat-lbl { font-size: 9px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-top: 1px; }
+  .stat-total .stat-val { color: var(--text); }
+  .stat-uw    .stat-val { color: var(--green); }
+  .stat-cond  .stat-val { color: var(--amber); }
+  .stat-pass  .stat-val { color: var(--red); }
+
+  /* Search bar */
+  .search-bar {
+    position: relative;
+  }
+  .search-bar input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 6px 10px 6px 28px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-bar input::placeholder { color: var(--text-dim); }
+  .search-bar input:focus { border-color: var(--border2); background: var(--bg); }
+  .search-bar .search-icon {
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 11px;
+    pointer-events: none;
+  }
+
+  /* Filter chips + sort row */
+  .filter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .filter-chips { display: flex; gap: 3px; }
+  .filter-chip {
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .filter-chip:hover { color: var(--text-mid); border-color: var(--text-dim); }
+  .filter-chip.active { border-color: var(--gold-dim); color: var(--gold); background: rgba(201,168,76,.08); }
+  .sort-select {
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    outline: none;
+  }
+  .sort-select option { background: var(--surface); }
+
+  /* Filing items */
+  .filing-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.12s;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .filing-item:hover { background: var(--surface2); }
+  .filing-item.active {
+    background: var(--surface2);
+    border-left: 2px solid var(--gold);
+    padding-left: 14px;
+  }
+  .filing-row1 {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .filing-name-wrap { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .filing-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .filing-chips { display: flex; gap: 3px; align-items: center; flex-shrink: 0; }
+  .rec-chip {
+    font-size: 9px; font-weight: 500; letter-spacing: 0.1em;
+    padding: 2px 7px; border-radius: 3px; text-transform: uppercase; flex-shrink: 0;
+  }
+  .rec-UNDERWRITE { background: rgba(46,204,138,.15); color: var(--green);  border: 1px solid rgba(46,204,138,.25); }
+  .rec-CONDITIONAL{ background: rgba(232,169,53,.15); color: var(--amber);  border: 1px solid rgba(232,169,53,.25); }
+  .rec-PASS       { background: rgba(224,82,82,.12);  color: var(--red);    border: 1px solid rgba(224,82,82,.2); }
+  .rec-ERROR      { background: rgba(107,117,133,.15);color: var(--text-dim);border:1px solid var(--border2); }
+  .rec-chip-amd {
+    background: rgba(59,130,246,.12); color: var(--accent);
+    border: 1px solid rgba(59,130,246,.25);
+    font-size: 9px; font-weight: 500; letter-spacing: .08em;
+    padding: 2px 6px; border-radius: 3px; text-transform: uppercase; flex-shrink: 0;
+  }
+  .star-btn {
+    background: none; border: none;
+    color: var(--text-dim); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 0 0 4px;
+    transition: color 0.15s; flex-shrink: 0;
+  }
+  .star-btn:hover { color: var(--gold); }
+  .star-btn.starred { color: var(--gold); }
+  .filing-row2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .filing-meta {
+    font-size: 10px; color: var(--text-dim);
+    display: flex; gap: 8px; align-items: center;
+  }
+  .filing-meta .ticker { color: var(--accent); font-weight: 500; }
+  .filing-score-bar { display: flex; align-items: center; gap: 6px; }
+  .score-val { font-size: 11px; font-weight: 500; color: var(--text-mid); width: 32px; text-align: right; }
+  .score-track { width: 52px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
+  .score-fill.high  { background: var(--green); }
+  .score-fill.mid   { background: var(--amber); }
+  .score-fill.low   { background: var(--red); }
+  .flag-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+
+  /* ── MEMO PANEL ── */
+  .panel-memo {
+    background: var(--bg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .memo-header-wrap {
+    padding: 32px 40px 0;
+    flex-shrink: 0;
+  }
+  .memo-empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    flex: 1; color: var(--text-dim); gap: 12px;
+  }
+  .memo-empty-icon { font-size: 40px; opacity: 0.2; }
+  .memo-empty p { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .memo-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 28px;
+  }
+  .memo-header-top {
+    display: flex; justify-content: space-between;
+    align-items: flex-start; margin-bottom: 12px;
+  }
+  .memo-company {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px; font-weight: 700;
+    color: var(--text); line-height: 1.2;
+  }
+  .memo-ticker { font-size: 13px; color: var(--accent); font-weight: 500; margin-top: 3px; }
+  .memo-rec-large {
+    font-size: 13px; font-weight: 600;
+    letter-spacing: 0.12em; padding: 8px 18px;
+    border-radius: 4px; text-transform: uppercase;
+  }
+  .memo-header-meta {
+    display: grid;
+    grid-template-columns: repeat(5, auto);
+    gap: 0;
+  }
+  .meta-item {
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-right: none;
+  }
+  .meta-item:first-child { border-radius: 4px 0 0 4px; }
+  .meta-item:last-child  { border-right: 1px solid var(--border); border-radius: 0 4px 4px 0; }
+  .meta-item .meta-lbl { font-size: 9px; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
+  .meta-item .meta-val { font-size: 13px; color: var(--text); font-weight: 500; }
+
+  /* Score gauge */
+  .score-gauge-row {
+    display: flex; align-items: center; gap: 20px;
+    margin: 24px 0; padding: 18px 22px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .gauge-circle { width: 72px; height: 72px; position: relative; flex-shrink: 0; }
+  .gauge-circle svg { transform: rotate(-90deg); }
+  .gauge-bg   { fill: none; stroke: var(--border2); stroke-width: 6; }
+  .gauge-fill { fill: none; stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset 0.8s ease; }
+  .gauge-label {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 17px; font-weight: 600;
+    color: var(--text); font-family: 'Playfair Display', serif;
+  }
+  .score-dimensions { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+  .dim-row { display: flex; align-items: center; gap: 10px; }
+  .dim-label { font-size: 10px; color: var(--text-dim); width: 160px; flex-shrink: 0; }
+  .dim-track { flex: 1; height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+  .dim-fill  { height: 100%; border-radius: 2px; }
+  .dim-score { font-size: 11px; color: var(--text-mid); width: 24px; text-align: right; }
+
+  /* Red flags */
+  .flag-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .pdf-flag-table { display: none; }  /* screen: hidden; shown only in print */
+  .flag-entry { display: flex; gap: 10px; align-items: flex-start; }
+  .flag-code {
+    font-size: 10px; font-weight: 500; color: var(--red);
+    background: rgba(224,82,82,.12); padding: 2px 6px; border-radius: 3px;
+    flex-shrink: 0; font-family: 'JetBrains Mono', monospace; margin-top: 1px;
+  }
+  .flag-text { font-size: 11px; color: var(--text-mid); line-height: 1.5; }
+
+  /* Amendment banner */
+  .amendment-banner {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 14px 18px;
+    background: rgba(59,130,246,.06);
+    border: 1px solid rgba(59,130,246,.25); border-radius: 6px;
+    margin-bottom: 24px;
+  }
+  .amendment-banner .amd-tag {
+    font-size: 10px; font-weight: 600; letter-spacing: .1em;
+    color: var(--accent); background: rgba(59,130,246,.15);
+    padding: 2px 8px; border-radius: 3px; flex-shrink: 0; margin-top: 1px;
+  }
+  .amendment-banner .amd-body { font-size: 12px; color: var(--text-mid); line-height: 1.6; }
+  .amendment-banner .amd-body strong { color: var(--text); font-weight: 600; }
+
+  /* Memo sections */
+  .memo-section { margin-bottom: 28px; }
+  .memo-section h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 14px; font-weight: 600; color: var(--gold);
+    margin-bottom: 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .memo-section h3 .section-num {
+    font-size: 10px; color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace; font-weight: 400;
+  }
+  .memo-prose {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 13px; line-height: 1.8; color: var(--text-mid);
+  }
+
+  /* Financial table */
+  .fin-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .fin-table th {
+    text-align: left; padding: 6px 12px;
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-dim); border-bottom: 1px solid var(--border2); font-weight: 400;
+  }
+  .fin-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-mid); vertical-align: top; }
+  .fin-table tr:last-child td { border-bottom: none; }
+  .fin-table .val-col { font-family: 'JetBrains Mono', monospace; color: var(--text); text-align: right; }
+  .fin-table .label-col { color: var(--text-mid); }
+
+  /* Conditions / pass */
+  .conditions-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; counter-reset: condition-counter; }
+  .condition-item {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 8px 12px;
+    background: rgba(232,169,53,.06); border: 1px solid rgba(232,169,53,.2); border-radius: 4px;
+  }
+  .condition-item::before {
+    counter-increment: condition-counter;
+    content: counter(condition-counter);
+    font-size: 10px; font-weight: 600; color: var(--amber);
+    font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0; margin-top: 2px; min-width: 14px;
+  }
+  .pass-list .condition-item::before { color: var(--red); }
+  .condition-text { font-size: 12px; color: var(--text-mid); line-height: 1.5; }
+
+  /* Committee narrative */
+  .committee-block {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--gold); border-radius: 0 6px 6px 0;
+    padding: 20px 24px; font-family: 'Libre Baskerville', serif;
+    font-size: 13px; line-height: 1.85; color: var(--text-mid);
+  }
+
+  /* Live comps table banner */
+  .live-badge {
+    font-size: 9px; font-weight: 500; letter-spacing: .08em;
+    color: var(--green); background: rgba(46,204,138,.1);
+    border: 1px solid rgba(46,204,138,.2);
+    padding: 1px 6px; border-radius: 3px; margin-left: 8px;
+  }
+
+  /* Disclaimer */
+  .memo-disclaimer {
+    font-size: 10px; color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: 16px; margin-top: 32px;
+    line-height: 1.7; font-style: italic;
+  }
+
+  /* No data state */
+  .no-data {
+    padding: 32px 20px; text-align: center;
+    color: var(--text-dim); font-size: 11px; line-height: 1.8;
+  }
+
+  /* ── ANALYTICS VIEW ── */
+  .analytics-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 36px;
+    background: var(--bg);
+    height: calc(100vh - 56px);
+  }
+  .analytics-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px; font-weight: 700; color: var(--gold);
+    margin-bottom: 6px;
+  }
+  .analytics-subtitle { font-size: 11px; color: var(--text-dim); margin-bottom: 28px; }
+  .analytics-stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .analytics-stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+  }
+  .analytics-stat-card .a-lbl {
+    font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 6px;
+  }
+  .analytics-stat-card .a-val {
+    font-family: 'Playfair Display', serif;
+    font-size: 28px; font-weight: 700; color: var(--text); line-height: 1;
+  }
+  .analytics-stat-card .a-sub { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px 22px;
+  }
+  .chart-card-full {
+    grid-column: 1 / -1;
+  }
+  .chart-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px; font-weight: 600; color: var(--gold);
+    margin-bottom: 4px;
+  }
+  .chart-subtitle { font-size: 10px; color: var(--text-dim); margin-bottom: 16px; }
+  .chart-container { position: relative; height: 220px; }
+  .chart-container-sm { position: relative; height: 160px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  /* Transitions */
+  .panel-memo > * { animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+
+  /* ── Memo tab bar ── */
+  .memo-tabs { display:flex; gap:2px; padding:14px 20px 0; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .memo-tab  { font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase;
+               color:var(--text-dim); cursor:pointer; padding:7px 16px; border-radius:4px 4px 0 0;
+               border:1px solid transparent; border-bottom:none; background:transparent;
+               transition:color .15s,background .15s; }
+  .memo-tab.active { color:var(--accent); border-color:var(--border); border-bottom-color:var(--bg-panel);
+                     background:var(--bg-panel); margin-bottom:-1px; }
+  .memo-tab:hover:not(.active) { color:var(--text-mid); }
+  .memo-tab-panel { padding:0 40px 40px; overflow-y:auto; flex:1; }
+
+  /* ── Use of Proceeds tab ── */
+  .proceeds-bar-wrap { margin:18px 0 10px; }
+  .proceeds-bar { display:flex; height:24px; border-radius:4px; overflow:hidden; width:100%; }
+  .pbar-seg     { height:100%; transition:width .4s ease; min-width:0; }
+  .pbar-growth  { background:var(--green); }
+  .pbar-debt    { background:var(--amber); }
+  .pbar-sponsor { background:#e07b54; }
+  .pbar-insider { background:var(--red); }
+  .pbar-general { background:var(--text-dim); }
+  .proceeds-legend { display:flex; flex-wrap:wrap; gap:8px 20px; margin-top:10px; }
+  .legend-item  { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-mid); }
+  .legend-dot   { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .rf19-banner  { background:#e07b5415; border:1px solid #e07b5450; border-radius:6px;
+                  padding:10px 14px; margin-bottom:16px; font-size:12px; color:#e07b54; font-weight:600; }
+  .proceeds-narrative { font-size:12px; color:var(--text-mid); line-height:1.7;
+                        margin-top:20px; font-family:'Libre Baskerville',serif; }
+  .dam-section  { margin-top:24px; }
+  .dam-table    { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+  .dam-table td { padding:6px 10px; border-bottom:1px solid var(--border); color:var(--text-mid); }
+  .dam-table td:last-child { text-align:right; color:var(--text); font-weight:500; font-variant-numeric:tabular-nums; }
+  .dam-source   { font-size:10px; color:var(--text-dim); margin-top:8px; }
+  .score-adj-note { font-size:11px; color:var(--amber); margin-top:4px; }
+
+  /* ── PRINT STYLES (PDF export) ── */
+  @media print {
+    .topbar, .sidebar-calendar, .panel-list, .analytics-view { display: none !important; }
+    .main-layout { display: block !important; height: auto !important; }
+    .panel-memo {
+      display: block !important;
+      padding: 20px !important;
+      overflow: visible !important;
+      height: auto !important;
+    }
+    body { background: #fff !important; color: #111 !important; }
+    :root {
+      --bg: #fff; --surface: #f9f9f9; --surface2: #f0f0f0;
+      --border: #ccc; --border2: #bbb; --text: #111; --text-mid: #333;
+      --text-dim: #666; --gold: #8a6e30; --green: #1a7a4e;
+      --amber: #9a6a00; --red: #a02020;
+    }
+    .committee-block { border-left-color: #8a6e30; }
+    .memo-disclaimer { border-top-color: #ccc; }
+    .memo-tab-panel {
+      display: block !important;
+      overflow: visible !important;
+      height: auto !important;
+      flex: none !important;
+    }
+    .memo-tabs { display: none !important; }
+    .score-gauge-row { page-break-before: always; break-before: page; }
+    .memo-section { page-break-inside: avoid; }
+    /* Suppress browser UA list-item counters in print */
+    ol, ul { list-style: none !important; padding-left: 0 !important; }
+    li::marker { content: none !important; }
+    .no-print { display: none !important; }
+    /* ── Section breathing room ── */
+    #memo-panel .memo-section { margin-top: 40px; }
+    /* ── Typography ── */
+    #memo-panel .memo-prose,
+    #memo-panel .committee-block,
+    #memo-panel .acct-score-text,
+    #memo-panel .esg-composite-text { font-family: 'Libre Baskerville', serif !important; }
+    #memo-panel .memo-section h3 { font-family: 'Playfair Display', serif !important; }
+    #memo-panel .acct-badge { font-family: 'Libre Baskerville', serif !important;
+                              font-size: 9px !important; letter-spacing: .02em !important; }
+    /* ── Financial & valuation tables — fixed columns, no overflow ── */
+    #memo-panel .fin-table,
+    #memo-panel .dam-table  { table-layout: fixed; width: 100%; }
+    #memo-panel .fin-table td:first-child,
+    #memo-panel .dam-table td:first-child { width: 60%; word-wrap: break-word; }
+    #memo-panel .fin-table td:last-child,
+    #memo-panel .dam-table td:last-child  { width: 40%; }
+    /* ── Accounting table ── */
+    #memo-panel .acct-table { table-layout: fixed; width: 100%; }
+    #memo-panel .acct-table td:nth-child(1) { width: 17%; }
+    #memo-panel .acct-table td:nth-child(2) { width: 50%; }
+    #memo-panel .acct-table td:nth-child(3) { width: 17%; }
+    #memo-panel .acct-table td:nth-child(4) { width: 16%; }
+    #memo-panel .acct-table td { font-size: 10px; word-wrap: break-word; }
+    /* Fix 3 — flag table shown in print; flag list + narrative hidden */
+    .flag-list, .key-risk-narrative { display: none !important; }
+    .pdf-flag-table { display: table; width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .pft-th   { text-align:left; padding:6px 8px; font-size:9px; letter-spacing:.09em;
+                text-transform:uppercase; border-bottom:2px solid #8a6e30; color:#666;
+                font-family:'Libre Baskerville',serif; font-weight:400; }
+    .pft-code { font-family:'Playfair Display',serif; font-weight:700; font-size:10px;
+                padding:8px 8px; vertical-align:top; white-space:normal; width:18%; color:#111; }
+    .pft-sev  { padding:8px 8px; vertical-align:top; white-space:nowrap; width:13%; }
+    .pft-desc { padding:8px 8px; vertical-align:top; font-family:'Libre Baskerville',serif;
+                font-size:10px; line-height:1.55; color:#333; }
+    .pdf-flag-table tr:nth-child(even) td { background:#f7f6f4; }
+    .pdf-flag-table tbody tr td { border-bottom:1px solid #e8e6e2; }
+    .pft-badge    { display:inline-block; font-size:8px; font-weight:700; letter-spacing:.05em;
+                    padding:2px 7px; text-transform:uppercase;
+                    font-family:'Libre Baskerville',serif; border-radius:2px; }
+    .pft-critical { background:rgba(160,32,32,.12); color:#a02020; border:1px solid rgba(160,32,32,.25); }
+    .pft-high     { background:rgba(154,106,0,.12);  color:#9a6a00; border:1px solid rgba(154,106,0,.25); }
+    .pft-medium   { background:rgba(107,117,133,.1); color:#555;    border:1px solid #bbb; }
+    .pft-low      { background:rgba(26,122,78,.10);  color:#1a7a4e; border:1px solid rgba(26,122,78,.2); }
+    .pft-none     { background:#f0f0f0; color:#666; border:1px solid #ccc; }
+  }
+
+  /* ── Sections 10-15 styles ── */
+  .comp-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+  .comp-table th { text-align:left; padding:6px 10px; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-dim); border-bottom:1px solid var(--border2); font-weight:400; }
+  .comp-table td { padding:7px 10px; border-bottom:1px solid var(--border); color:var(--text-mid); }
+  .comp-table tr:last-child td { border-bottom:none; }
+  .pop-pos { color:var(--green); font-weight:500; font-family:'JetBrains Mono',monospace; }
+  .pop-neg { color:var(--red);   font-weight:500; font-family:'JetBrains Mono',monospace; }
+  .tier-badge { display:inline-block; font-size:10px; font-weight:600; letter-spacing:.07em; padding:2px 8px; border-radius:3px; text-transform:uppercase; }
+  .tier-1 { background:rgba(46,204,138,.15); color:var(--green); border:1px solid rgba(46,204,138,.3); }
+  .tier-2 { background:rgba(232,169,53,.15);  color:var(--amber); border:1px solid rgba(232,169,53,.3); }
+  .tier-3 { background:rgba(224,82,82,.12);   color:var(--red);   border:1px solid rgba(224,82,82,.25); }
+  .rev-quality-badge { display:inline-block; font-size:10px; font-weight:600; letter-spacing:.07em; padding:2px 10px; border-radius:12px; text-transform:uppercase; }
+  .rev-high   { background:rgba(46,204,138,.15); color:var(--green); border:1px solid rgba(46,204,138,.3); }
+  .rev-medium { background:rgba(232,169,53,.15);  color:var(--amber); border:1px solid rgba(232,169,53,.3); }
+  .rev-low    { background:rgba(224,82,82,.12);   color:var(--red);   border:1px solid rgba(224,82,82,.25); }
+  .litig-badge { display:inline-block; font-size:11px; font-weight:600; letter-spacing:.07em; padding:3px 12px; border-radius:12px; text-transform:uppercase; }
+  .litig-none     { background:rgba(46,204,138,.10); color:var(--green); border:1px solid rgba(46,204,138,.2); }
+  .litig-low      { background:rgba(46,204,138,.08); color:var(--green); border:1px solid rgba(46,204,138,.15); }
+  .litig-medium   { background:rgba(232,169,53,.15);  color:var(--amber); border:1px solid rgba(232,169,53,.3); }
+  .litig-high     { background:rgba(224,82,82,.12);   color:var(--red);   border:1px solid rgba(224,82,82,.25); }
+  .litig-critical { background:rgba(224,82,82,.20);   color:var(--red);   border:1px solid rgba(224,82,82,.5); font-size:12px; }
+  .rf-banner { border-radius:5px; padding:10px 14px; margin:10px 0; font-size:12px; font-weight:600; }
+  .rf-banner-red   { background:rgba(224,82,82,.07);  border:1px solid rgba(224,82,82,.3);  color:var(--red); }
+  .rf-banner-amber { background:rgba(232,169,53,.08); border:1px solid rgba(232,169,53,.3); color:var(--amber); }
+  .bool-row { display:flex; align-items:center; gap:10px; padding:5px 0; font-size:12px; color:var(--text-mid); border-bottom:1px solid var(--border); }
+  .bool-row:last-child { border-bottom:none; }
+  .bool-icon-yes { color:var(--red);   font-size:14px; }
+  .bool-icon-no  { color:var(--green); font-size:14px; }
+
+  /* ── Section 16 Accounting Practices ───────────────── */
+  .acct-score-block { display:flex; align-items:center; gap:18px; padding:14px 18px;
+                      border-radius:8px; background:var(--surface2); border:1px solid var(--border2);
+                      margin-bottom:18px; }
+  .acct-score-num   { font-size:36px; font-weight:700; font-family:'JetBrains Mono',monospace;
+                      line-height:1; flex-shrink:0; }
+  .acct-score-label { font-size:10px; letter-spacing:.09em; text-transform:uppercase;
+                      color:var(--text-dim); margin-bottom:3px; }
+  .acct-score-text  { font-size:12px; color:var(--text-mid); line-height:1.7;
+                      font-family:'Libre Baskerville',serif; }
+  .acct-score-high  { color:var(--green); }
+  .acct-score-mid   { color:var(--amber); }
+  .acct-score-low   { color:var(--red); }
+
+  .acct-table          { width:100%; border-collapse:collapse; font-size:12px; margin-top:12px; }
+  .acct-table th       { text-align:left; padding:6px 10px; font-size:10px; letter-spacing:.09em;
+                         text-transform:uppercase; color:var(--text-dim); border-bottom:1px solid var(--border2);
+                         font-weight:400; }
+  .acct-table td       { padding:9px 10px; border-bottom:1px solid var(--border); color:var(--text-mid);
+                         vertical-align:middle; line-height:1.55; }
+  .acct-table td:first-child { color:var(--text); font-weight:500; }
+  .acct-table td:last-child  { white-space:nowrap; text-align:right; width:1%; }
+
+  /* expandable rows */
+  .acct-row-expandable       { cursor:pointer; }
+  .acct-row-expandable:hover td { background:rgba(255,255,255,.025); }
+  .acct-toggle               { display:inline-block; font-size:7px; margin-right:7px;
+                               color:var(--text-dim); transition:transform .18s;
+                               vertical-align:middle; user-select:none; }
+  .acct-row-expandable.open .acct-toggle { transform:rotate(90deg); }
+  .acct-detail-row           { display:none; }
+  .acct-detail-row.open      { display:table-row; }
+  .acct-detail-body          { padding:6px 10px 14px 26px; font-size:11.5px; color:var(--text-mid);
+                               line-height:1.75; font-family:'Libre Baskerville',serif; }
+  .acct-detail-label         { display:block; font-size:9px; text-transform:uppercase;
+                               letter-spacing:.09em; color:var(--text-dim); margin-top:10px;
+                               margin-bottom:3px; }
+  .acct-detail-label:first-child { margin-top:0; }
+  .acct-hint                 { font-size:10px; color:var(--text-dim); margin-top:7px;
+                               font-style:italic; }
+
+  .acct-badge        { display:inline-block; font-size:10px; font-weight:700; letter-spacing:normal;
+                       font-family:inherit; padding:2px 8px; border-radius:3px; text-transform:uppercase; }
+  .acct-conservative { background:rgba(46,204,138,.12);  color:var(--green);    border:1px solid rgba(46,204,138,.25); }
+  .acct-standard     { background:rgba(107,117,133,.12); color:var(--text-mid); border:1px solid var(--border2); }
+  .acct-aggressive   { background:rgba(232,169,53,.15);  color:var(--amber);    border:1px solid rgba(232,169,53,.3); }
+  .acct-highly       { background:rgba(224,82,82,.14);   color:var(--red);      border:1px solid rgba(224,82,82,.3); }
+
+  .rf25-banner       { background:rgba(224,82,82,.10); border:1px solid rgba(224,82,82,.35);
+                       border-radius:6px; padding:10px 14px; margin-bottom:16px;
+                       font-size:12px; color:var(--red); font-weight:600; }
+
+  /* ── Section 17 ESG Disclosure Score ───────────────── */
+  .esg-composite-block { display:flex; align-items:center; gap:18px; padding:14px 18px;
+                         border-radius:8px; background:var(--surface2); border:1px solid var(--border2);
+                         margin-bottom:18px; }
+  .esg-composite-num   { font-size:36px; font-weight:700; font-family:'JetBrains Mono',monospace;
+                         line-height:1; flex-shrink:0; }
+  .esg-composite-label { font-size:10px; letter-spacing:.09em; text-transform:uppercase;
+                         color:var(--text-dim); margin-bottom:3px; }
+  .esg-composite-text  { font-size:12px; color:var(--text-mid); line-height:1.7;
+                         font-family:'Libre Baskerville',serif; }
+  .esg-score-high      { color:var(--green); }
+  .esg-score-mid       { color:var(--amber); }
+  .esg-score-low       { color:var(--red); }
+
+  .esg-pillars         { display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+                         margin-bottom:4px; }
+  .esg-pillar          { background:var(--surface2); border:1px solid var(--border2);
+                         border-radius:8px; padding:14px 16px; }
+  .esg-pillar-header   { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; }
+  .esg-pillar-letter   { font-size:22px; font-weight:700; font-family:'JetBrains Mono',monospace;
+                         line-height:1; }
+  .esg-pillar-score    { font-size:20px; font-weight:700; font-family:'JetBrains Mono',monospace; }
+  .esg-pillar-weight   { font-size:9px; color:var(--text-dim); text-transform:uppercase;
+                         letter-spacing:.07em; margin-left:auto; }
+  .esg-bar-track       { height:4px; background:var(--border2); border-radius:3px;
+                         margin-bottom:12px; overflow:hidden; }
+  .esg-bar-fill        { height:100%; border-radius:3px; }
+  .esg-bar-high        { background:var(--green); }
+  .esg-bar-mid         { background:var(--amber); }
+  .esg-bar-low         { background:var(--red); }
+  .esg-list-label      { font-size:9px; text-transform:uppercase; letter-spacing:.08em;
+                         color:var(--text-dim); margin-bottom:4px; margin-top:10px; }
+  .esg-list-label:first-of-type { margin-top:0; }
+  .esg-ul              { margin:0 0 0 13px; padding:0; font-size:11px; color:var(--text-mid);
+                         line-height:1.65; }
+  .esg-ul li           { margin-bottom:2px; }
+  .esg-ul.gaps li      { color:var(--text-dim); font-style:italic; }
+
+  /* ── PDF Cover & Part Dividers (injected by exportPDF only) ── */
+  .pdf-part-divider { display: none; }
+  @media print {
+    /* Part dividers — inline separator, no dedicated page */
+    .pdf-part-divider {
+      display: flex; align-items: center; gap: 14px;
+      margin: 44px 0 28px; background: transparent;
+    }
+    .pdf-divider-top-rule { display:block; height:3px; background:#8a6e30; flex:1; }
+    .pdf-part-label       { display:inline-block; font-variant:small-caps;
+                            font-family:'Playfair Display',serif; font-size:11px;
+                            letter-spacing:.12em; color:#8a6e30; white-space:nowrap; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <h1>IPO Screener</h1>
+    <span>Equity Capital Markets · Due Diligence</span>
+  </div>
+  <div class="topbar-nav">
+    <button class="nav-btn active" id="nav-filings" onclick="setView('filings')">Filings</button>
+    <button class="nav-btn" id="nav-analytics" onclick="setView('analytics')">Analytics</button>
+  </div>
+  <div class="topbar-meta">
+    <span><span class="live-dot"></span>Claude Opus · Daily S-1 Analysis</span>
+    <button class="export-btn" onclick="exportCSV()" title="Export current day to CSV">CSV</button>
+    <button class="export-btn" onclick="exportPDF()" title="Print current memo to PDF">PDF</button>
+    <span id="current-time">—</span>
+  </div>
+</div>
+
+<!-- FILINGS VIEW: THREE-COLUMN LAYOUT -->
+<div class="main-layout" id="view-filings">
+
+  <!-- COLUMN 1: SIDEBAR -->
+  <div class="sidebar-calendar">
+
+    <!-- Watchlist -->
+    <div class="watchlist-section">
+      <div class="watchlist-header">
+        <h2>Watchlist</h2>
+        <span class="watchlist-count" id="watchlist-count">0</span>
+      </div>
+      <div id="watchlist-list">
+        <div class="watchlist-empty">No starred companies yet.</div>
+      </div>
+    </div>
+
+    <!-- Sessions -->
+    <div class="sessions-section">
+      <h2>Sessions</h2>
+      <div id="calendar-list">
+        <div class="no-data">No sessions yet.<br>Run the screener to populate.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- COLUMN 2: FILING LIST -->
+  <div class="panel-list">
+    <div class="panel-list-header">
+      <h2 id="list-date-title">Select a date</h2>
+      <div class="panel-list-stats">
+        <div class="stat-box stat-total"><span class="stat-val" id="st-total">—</span><span class="stat-lbl">Total</span></div>
+        <div class="stat-box stat-uw"  ><span class="stat-val" id="st-uw">—</span><span class="stat-lbl">Underwrite</span></div>
+        <div class="stat-box stat-cond"><span class="stat-val" id="st-cond">—</span><span class="stat-lbl">Conditional</span></div>
+        <div class="stat-box stat-pass"><span class="stat-val" id="st-pass">—</span><span class="stat-lbl">Pass</span></div>
+      </div>
+      <div class="search-bar">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="search-input" placeholder="Search company, ticker, sector..." oninput="applyFilters()">
+      </div>
+      <div class="filter-row">
+        <div class="filter-chips">
+          <button class="filter-chip active" data-rec="ALL"         onclick="setRecFilter(this)">All</button>
+          <button class="filter-chip"        data-rec="UNDERWRITE"  onclick="setRecFilter(this)">UW</button>
+          <button class="filter-chip"        data-rec="CONDITIONAL" onclick="setRecFilter(this)">Cond</button>
+          <button class="filter-chip"        data-rec="PASS"        onclick="setRecFilter(this)">Pass</button>
+        </div>
+        <select class="sort-select" id="sort-select" onchange="applyFilters()">
+          <option value="score">Sort: Score</option>
+          <option value="name">Sort: Name</option>
+          <option value="offering">Sort: Offering</option>
+          <option value="flags">Sort: Flags</option>
+        </select>
+      </div>
+    </div>
+    <div id="filing-list" style="flex:1;overflow-y:auto;">
+      <div class="no-data">Select a session date<br>to view filings.</div>
+    </div>
+  </div>
+
+  <!-- COLUMN 3: MEMO VIEWER -->
+  <div class="panel-memo" id="memo-panel">
+    <div class="memo-empty">
+      <div class="memo-empty-icon">⬡</div>
+      <p>Select a company to read the memo</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- ANALYTICS VIEW -->
+<div id="view-analytics" class="analytics-view" style="display:none;">
+  <div class="analytics-title">Sector Analytics</div>
+  <div class="analytics-subtitle" id="analytics-subtitle">Loading...</div>
+  <div class="analytics-stats-row" id="analytics-stats"></div>
+  <div class="analytics-grid" id="analytics-grid"></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────
+const DATA_BASE = "./memos";
+
+// ─────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────
+let currentDate    = null;
+let currentCompany = null;
+let sessions       = {};   // { "2026-02-26": _index.json contents }
+let filterState    = { search: "", rec: "ALL", sort: "score" };
+let watchlist      = loadWatchlist();
+let chartInstances = {};   // keyed by canvas id
+
+// ─────────────────────────────────────────────────────────
+// CLOCK
+// ─────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById("current-time").textContent =
+    new Date().toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit", hour12:true }) + " PT";
+}
+updateClock();
+setInterval(updateClock, 30000);
+
+// ─────────────────────────────────────────────────────────
+// VIEW TOGGLE
+// ─────────────────────────────────────────────────────────
+function setView(view) {
+  const isFilings = view === "filings";
+  document.getElementById("view-filings").style.display   = isFilings ? "grid"  : "none";
+  document.getElementById("view-analytics").style.display  = isFilings ? "none"  : "flex";
+  document.getElementById("view-analytics").style.flexDirection = "column";
+  document.getElementById("nav-filings").classList.toggle("active",   isFilings);
+  document.getElementById("nav-analytics").classList.toggle("active", !isFilings);
+  if (!isFilings) renderAnalytics();
+}
+
+// ─────────────────────────────────────────────────────────
+// SESSION LOADING
+// ─────────────────────────────────────────────────────────
+async function loadSessions() {
+  try {
+    const resp = await fetch(`${DATA_BASE}/_manifest.json`);
+    if (resp.ok) {
+      const manifest = await resp.json();
+      for (const date of manifest.dates) await loadDateIndex(date);
+    } else {
+      await tryRecentDates(30);
+    }
+  } catch {
+    await tryRecentDates(30);
+  }
+  renderCalendar();
+  const sorted = Object.keys(sessions).sort().reverse();
+  if (sorted.length > 0) selectDate(sorted[0]);
+}
+
+async function tryRecentDates(days) {
+  const today = new Date();
+  const promises = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    promises.push(loadDateIndex(d.toISOString().split("T")[0]));
+  }
+  await Promise.allSettled(promises);
+}
+
+async function loadDateIndex(dateStr) {
+  try {
+    const resp = await fetch(`${DATA_BASE}/${dateStr}/_index.json`);
+    if (resp.ok) sessions[dateStr] = await resp.json();
+  } catch { /* no data for this date */ }
+}
+
+// ─────────────────────────────────────────────────────────
+// WATCHLIST (localStorage)
+// ─────────────────────────────────────────────────────────
+function loadWatchlist() {
+  try { return JSON.parse(localStorage.getItem("ipo_screener_watchlist") || "[]"); }
+  catch { return []; }
+}
+
+function saveWatchlist() {
+  localStorage.setItem("ipo_screener_watchlist", JSON.stringify(watchlist));
+}
+
+function isStarred(file, date) {
+  return watchlist.some(w => w.file === file && w.date === date);
+}
+
+function toggleWatchlist(btn) {
+  const { file, date, company, rec, score } = btn.dataset;
+  const idx = watchlist.findIndex(w => w.file === file && w.date === date);
+  if (idx >= 0) {
+    watchlist.splice(idx, 1);
+    btn.classList.remove("starred");
+    btn.textContent = "☆";
+  } else {
+    watchlist.unshift({ file, date, company, rec, score: score || null });
+    btn.classList.add("starred");
+    btn.textContent = "★";
+  }
+  saveWatchlist();
+  renderWatchlist();
+}
+
+function renderWatchlist() {
+  const container = document.getElementById("watchlist-list");
+  const countEl   = document.getElementById("watchlist-count");
+  countEl.textContent = watchlist.length;
+  if (watchlist.length === 0) {
+    container.innerHTML = `<div class="watchlist-empty">No starred companies yet.</div>`;
+    return;
+  }
+  container.innerHTML = watchlist.map(w => `
+    <div class="watchlist-item" onclick="jumpToMemo('${w.date}','${w.file}','${escAttr(w.company)}')">
+      <div class="watchlist-item-left">
+        <span class="watchlist-name">${w.company}</span>
+        <span class="watchlist-date">${w.date} · <span style="color:${recColor(w.rec)}">${w.rec || "—"}</span></span>
+      </div>
+      <button class="watchlist-unstar" onclick="event.stopPropagation();removeFromWatchlist('${w.file}','${w.date}')" title="Remove">★</button>
+    </div>`
+  ).join("");
+}
+
+function removeFromWatchlist(file, date) {
+  watchlist = watchlist.filter(w => !(w.file === file && w.date === date));
+  saveWatchlist();
+  renderWatchlist();
+  // update star button if visible
+  document.querySelectorAll(`.star-btn[data-file="${file}"][data-date="${date}"]`).forEach(b => {
+    b.classList.remove("starred"); b.textContent = "☆";
+  });
+}
+
+async function jumpToMemo(date, file, company) {
+  if (date !== currentDate) {
+    if (!sessions[date]) await loadDateIndex(date);
+    selectDate(date);
+  }
+  setTimeout(() => selectCompany(date, file, company), 50);
+}
+
+// ─────────────────────────────────────────────────────────
+// CALENDAR
+// ─────────────────────────────────────────────────────────
+function renderCalendar() {
+  const container = document.getElementById("calendar-list");
+  const dates = Object.keys(sessions).sort().reverse();
+  if (dates.length === 0) {
+    container.innerHTML = `<div class="no-data">No sessions yet.<br>Run the screener to populate.</div>`;
+    return;
+  }
+  let html = "", lastMonth = null;
+  for (const date of dates) {
+    const d   = new Date(date + "T12:00:00");
+    const mon = d.toLocaleDateString("en-US", { month:"long", year:"numeric" });
+    if (mon !== lastMonth) { html += `<div class="cal-month">${mon}</div>`; lastMonth = mon; }
+    const s   = sessions[date];
+    const dow = d.toLocaleDateString("en-US", { weekday:"short" });
+    const day = d.toLocaleDateString("en-US", { month:"short", day:"numeric" });
+    html += `
+      <div class="cal-day${date === currentDate ? ' active' : ''}" onclick="selectDate('${date}')">
+        <div class="cal-day-label">
+          <span class="cal-day-date">${day}</span>
+          <span class="cal-day-dow">${dow}</span>
+        </div>
+        <div class="cal-day-badge">
+          <span class="badge badge-count">${s.total_filings}</span>
+          ${s.underwrite_count  > 0 ? `<span class="badge badge-uw">${s.underwrite_count}</span>`   : ""}
+          ${s.conditional_count > 0 ? `<span class="badge badge-cond">${s.conditional_count}</span>` : ""}
+        </div>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────
+// SELECT DATE
+// ─────────────────────────────────────────────────────────
+function selectDate(date) {
+  currentDate    = date;
+  currentCompany = null;
+  renderCalendar();
+  const s = sessions[date];
+  if (!s) return;
+  const d = new Date(date + "T12:00:00");
+  document.getElementById("list-date-title").textContent =
+    d.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" });
+  document.getElementById("st-total").textContent = s.total_filings    ?? "—";
+  document.getElementById("st-uw"   ).textContent = s.underwrite_count  ?? "—";
+  document.getElementById("st-cond" ).textContent = s.conditional_count ?? "—";
+  document.getElementById("st-pass" ).textContent = s.pass_count        ?? "—";
+  // Reset filters
+  filterState.search = "";
+  filterState.rec    = "ALL";
+  filterState.sort   = "score";
+  document.getElementById("search-input").value = "";
+  document.querySelectorAll(".filter-chip").forEach(c => c.classList.toggle("active", c.dataset.rec === "ALL"));
+  document.getElementById("sort-select").value = "score";
+  applyFilters();
+  document.getElementById("memo-panel").innerHTML =
+    `<div class="memo-empty"><div class="memo-empty-icon">⬡</div><p>Select a company to read the memo</p></div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// FILTER & SORT
+// ─────────────────────────────────────────────────────────
+function setRecFilter(btn) {
+  filterState.rec = btn.dataset.rec;
+  document.querySelectorAll(".filter-chip").forEach(c => c.classList.toggle("active", c === btn));
+  applyFilters();
+}
+
+function applyFilters() {
+  filterState.search = document.getElementById("search-input").value.toLowerCase();
+  filterState.sort   = document.getElementById("sort-select").value;
+  const s = currentDate && sessions[currentDate];
+  if (!s || !s.companies) return;
+
+  let companies = s.companies.filter(c => {
+    const matchSearch = !filterState.search || [c.company_name, c.proposed_ticker, c.sector]
+      .some(v => v && v.toLowerCase().includes(filterState.search));
+    const matchRec = filterState.rec === "ALL" || c.recommendation === filterState.rec;
+    return matchSearch && matchRec;
+  });
+
+  companies = companies.slice().sort((a, b) => {
+    switch (filterState.sort) {
+      case "name":     return (a.company_name || "").localeCompare(b.company_name || "");
+      case "offering": return (b.offering_size_usd_millions || 0) - (a.offering_size_usd_millions || 0);
+      case "flags":    return (b.red_flag_count || 0) - (a.red_flag_count || 0);
+      default:         return (b.score || 0) - (a.score || 0);
+    }
+  });
+
+  renderFilingList(companies);
+}
+
+function renderFilingList(companies) {
+  if (!companies || companies.length === 0) {
+    document.getElementById("filing-list").innerHTML =
+      `<div class="no-data">No filings match your filters.</div>`;
+    return;
+  }
+  let html = "";
+  for (const c of companies) {
+    const score      = c.score != null ? c.score.toFixed(0) : null;
+    const scoreColor = score >= 80 ? "high" : score >= 55 ? "mid" : "low";
+    const scorePct   = score != null ? score + "%" : "0%";
+    const gcDot      = c.going_concern ? `<span class="flag-dot" title="Going Concern"></span>` : "";
+    const flagsText  = c.red_flag_count > 0 ? `<span style="font-size:10px;color:var(--red)">⚑ ${c.red_flag_count}</span>` : "";
+    const amdChip    = c.is_amendment ? `<span class="rec-chip-amd">AMD</span>` : "";
+    const starred    = isStarred(c.file, currentDate);
+    html += `
+      <div class="filing-item${c.company_name === currentCompany ? ' active' : ''}"
+           onclick="selectCompany('${currentDate}', '${c.file}', '${escAttr(c.company_name)}')">
+        <div class="filing-row1">
+          <div class="filing-name-wrap">
+            <span class="filing-name">${c.company_name}</span>
+          </div>
+          <div class="filing-chips">
+            ${amdChip}
+            <span class="rec-chip rec-${c.recommendation}">${c.recommendation || "—"}</span>
+            <button class="star-btn${starred ? ' starred' : ''}"
+              data-file="${escAttr(c.file)}" data-date="${currentDate}"
+              data-company="${escAttr(c.company_name)}" data-rec="${c.recommendation || ''}"
+              data-score="${c.score != null ? c.score.toFixed(1) : ''}"
+              onclick="event.stopPropagation(); toggleWatchlist(this)"
+              title="${starred ? 'Remove from watchlist' : 'Add to watchlist'}">
+              ${starred ? "★" : "☆"}
+            </button>
+          </div>
+        </div>
+        <div class="filing-row2">
+          <div class="filing-meta">
+            ${c.proposed_ticker ? `<span class="ticker">${c.proposed_ticker}</span> ·` : ""}
+            <span>${c.sector || "—"}</span>
+            ${c.offering_size_usd_millions ? `<span>$${c.offering_size_usd_millions}M</span>` : ""}
+            ${gcDot} ${flagsText}
+          </div>
+          <div class="filing-score-bar">
+            ${score !== null ? `
+              <div class="score-track"><div class="score-fill ${scoreColor}" style="width:${scorePct}"></div></div>
+              <span class="score-val">${score}</span>` : ""}
+          </div>
+        </div>
+      </div>`;
+  }
+  document.getElementById("filing-list").innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────
+// SELECT COMPANY → RENDER MEMO
+// ─────────────────────────────────────────────────────────
+async function selectCompany(date, file, companyName) {
+  currentCompany = companyName;
+  document.querySelectorAll(".filing-item").forEach(el =>
+    el.classList.toggle("active", el.querySelector(".filing-name")?.textContent === companyName)
+  );
+  document.getElementById("memo-panel").innerHTML =
+    `<div class="memo-empty"><div class="memo-empty-icon">◌</div><p>Loading memo...</p></div>`;
+  try {
+    const resp = await fetch(`${DATA_BASE}/${date}/${file}`);
+    if (!resp.ok) throw new Error("Not found");
+    renderMemo(await resp.json());
+  } catch (e) {
+    document.getElementById("memo-panel").innerHTML =
+      `<div class="memo-empty"><p>Could not load memo: ${e.message}</p></div>`;
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// RENDER FULL MEMO
+// ─────────────────────────────────────────────────────────
+function renderMemo(m) {
+  window._lastMemo = m;
+  const scores   = m.scores    || {};
+  const fin      = m.financials || {};
+  const val      = m.valuation  || {};
+  const total    = scores.weighted_total;
+  const recColor = m.recommendation === "UNDERWRITE" ? "var(--green)" :
+                   m.recommendation === "CONDITIONAL" ? "var(--amber)" : "var(--red)";
+  const gaugeR    = 28;
+  const gaugeC    = 2 * Math.PI * gaugeR;
+  const gaugeFill = total != null ? gaugeC - (gaugeC * total / 100) : gaugeC;
+  const gaugeColor = total >= 80 ? "var(--green)" : total >= 55 ? "var(--amber)" : "var(--red)";
+
+  // Dimension bars
+  const dims = [
+    { label: "Business Model Quality",    val: scores.business_model_quality,     w: 25 },
+    { label: "Financial Health & Runway", val: scores.financial_health_runway,     w: 25 },
+    { label: "Market & Competition",      val: scores.market_competitive_position, w: 20 },
+    { label: "Management & Governance",   val: scores.management_governance,       w: 15 },
+    { label: "Valuation",                 val: scores.valuation_attractiveness,    w: 15 }
+  ];
+  const dimBars = dims.map(d => {
+    const v   = d.val;
+    const pct = v != null ? (v / 10 * 100).toFixed(0) + "%" : "0%";
+    const col = v >= 7.5 ? "var(--green)" : v >= 5.5 ? "var(--amber)" : "var(--red)";
+    return `<div class="dim-row">
+      <span class="dim-label">${d.label} <span style="color:var(--text-dim)">(${d.w}%)</span></span>
+      <div class="dim-track"><div class="dim-fill" style="width:${pct};background:${col}"></div></div>
+      <span class="dim-score">${v != null ? v.toFixed(1) : "—"}</span>
+    </div>`;
+  }).join("");
+
+  // Financial snapshot table
+  const finRows = [
+    ["Revenue (Y-2)",     fmtM(fin.revenue_usd_millions?.year_minus_2)],
+    ["Revenue (Y-1)",     fmtM(fin.revenue_usd_millions?.year_minus_1)],
+    ["Revenue (TTM)",     fmtM(fin.revenue_usd_millions?.ttm)],
+    ["YoY Growth",        fin.revenue_growth_yoy_pct   != null ? `${fin.revenue_growth_yoy_pct}%` : "—"],
+    ["Gross Margin",      fin.gross_margin_pct          != null ? `${fin.gross_margin_pct}%` : "—"],
+    ["EBITDA",            fmtM(fin.ebitda_usd_millions)],
+    ["Net Income/Loss",   fmtM(fin.net_income_usd_millions)],
+    ["Cash Burn (Qtrly)", fmtM(fin.cash_burn_quarterly_usd_millions)],
+    ["Cash on Hand",      fmtM(fin.cash_on_hand_pre_ipo_usd_millions)],
+    ["Post-IPO Runway",   fin.estimated_runway_months_post_ipo != null ? `${fin.estimated_runway_months_post_ipo} months` : "—"],
+    ["Total Debt",        fmtM(fin.total_debt_usd_millions)],
+    ["SBC % Revenue",     fin.stock_based_comp_pct_revenue != null ? `${fin.stock_based_comp_pct_revenue}%` : "—"],
+    ["Rule of 40",        fin.rule_of_40_score != null ? `${fin.rule_of_40_score}` : "—"],
+    ["NRR",               fin.nrr_pct != null ? `${fin.nrr_pct}%` : "—"],
+  ];
+  const finTable = `<table class="fin-table">
+    <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
+    <tbody>${finRows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
+  </table>`;
+
+  // Valuation section — live comps + Damodaran benchmarks
+  const liveCompsData = val.live_comps_data || [];
+  const dam = m.damodaran_comps || {};
+  const liveFlag = m.live_comps_enriched ? `<span class="live-badge">LIVE</span>` : "";
+  const damFlag  = dam.matched_industry   ? `<span class="live-badge" style="background:#6a5acd20;color:#9b8eea;border-color:#9b8eea40;margin-left:4px">DAM</span>` : "";
+  const liveCompsTable = liveCompsData.length > 0
+    ? `<table class="fin-table" style="margin-top:14px;">
+        <thead><tr><th>Comp</th><th>Name</th><th style="text-align:right">EV</th><th style="text-align:right">Rev TTM</th><th style="text-align:right">EV/Rev</th></tr></thead>
+        <tbody>${liveCompsData.map(c => `
+          <tr>
+            <td class="label-col" style="color:var(--accent);font-weight:500">${c.ticker}</td>
+            <td class="label-col">${c.name || "—"}</td>
+            <td class="val-col">${c.ev_usd_millions != null ? "$"+c.ev_usd_millions.toLocaleString()+"M" : "—"}</td>
+            <td class="val-col">${c.revenue_ttm_usd_millions != null ? "$"+c.revenue_ttm_usd_millions.toLocaleString()+"M" : "—"}</td>
+            <td class="val-col">${c.ev_revenue_multiple != null ? c.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>` : "";
+  const damRows = dam.matched_industry ? `
+        <tr><td colspan="2" style="padding-top:12px;color:var(--text-dim);font-size:10px;letter-spacing:.06em;text-transform:uppercase">Damodaran Sector Benchmarks — ${dam.matched_industry}</td></tr>
+        <tr><td>EV/EBITDA (Damodaran)</td><td class="val-col">${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>EV/Revenue (Damodaran)</td><td class="val-col">${dam.ev_revenue_sector_median != null ? dam.ev_revenue_sector_median.toFixed(1)+"x" : "—"}</td></tr>` : "";
+  const damBench = dam.matched_industry ? `
+    <div class="dam-section">
+      <h3 style="font-size:12px;font-family:'Playfair Display',serif;color:var(--gold);margin-bottom:4px">Damodaran Sector Benchmarks</h3>
+      <table class="dam-table">
+        <tr><td>Matched Industry</td><td>${dam.matched_industry}</td></tr>
+        <tr><td>EV/EBITDA (sector median)</td><td>${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>EV/Revenue (sector median)</td><td>${dam.ev_revenue_sector_median != null ? dam.ev_revenue_sector_median.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>Subject EV/Revenue</td><td style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.ev_revenue_multiple != null ? val.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>Premium to Sector</td><td style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.premium_to_sector_median_pct != null ? (val.premium_to_sector_median_pct > 0 ? "+" : "")+val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
+      </table>
+      <div class="dam-source">Source: Damodaran NYU Stern — January 2026 &nbsp;·&nbsp;
+        <a href="https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/vebitda.html" target="_blank" style="color:var(--text-dim)">EV/EBITDA</a> &nbsp;·&nbsp;
+        <a href="https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/psdata.html" target="_blank" style="color:var(--text-dim)">EV/Sales</a>
+      </div>
+    </div>` : "";
+  const valSection = `<div class="memo-section">
+    <h3><span class="section-num">09</span> Valuation Analysis ${liveFlag}${damFlag}</h3>
+    <table class="fin-table">
+      <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
+      <tbody>
+        <tr><td>Implied EV</td><td class="val-col">${fmtM(val.implied_ev_usd_millions)}</td></tr>
+        <tr><td>EV / Revenue</td><td class="val-col">${val.ev_revenue_multiple != null ? val.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>Sector Median EV/Rev${val.sector_median_source === "live_market_data" ? " (live)" : val.sector_median_source === "damodaran" ? " (Damodaran)" : ""}</td><td class="val-col">${val.sector_median_ev_revenue != null ? val.sector_median_ev_revenue.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>Premium to Sector</td><td class="val-col" style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.premium_to_sector_median_pct != null ? val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
+        <tr><td>Public Comps</td><td class="val-col">${(val.public_comps || []).join(", ") || "—"}</td></tr>
+        ${damRows}
+      </tbody>
+    </table>
+    ${liveCompsTable}
+    ${damBench}
+  </div>`;
+
+  // Risk & Red Flags (section 04) — only show triggered flags; escape HTML entities
+  const _triggeredFlags = (m.red_flags || []).filter(f => typeof f === "string" || f.triggered !== false);
+  const flagListHtml = _triggeredFlags.length > 0
+    ? `<div class="flag-list">${_triggeredFlags.map(f => {
+        if (typeof f === "string") return `<div class="flag-entry"><span class="flag-code">FLAG</span><span class="flag-text">${escAttr(f)}</span></div>`;
+        const _fc = escAttr(f.flag_id || f.code || "RF");
+        const _fl = f.label || f.description || "";
+        const _fn = f.narrative || "";
+        const _ft = _fl && _fn ? `${escAttr(_fl)} \u2014 ${escAttr(_fn)}` : escAttr(_fl || _fn || "");
+        return `<div class="flag-entry"><span class="flag-code">${_fc}</span><span class="flag-text">${_ft}</span></div>`;
+      }).join("")}</div>`
+    : `<p class="memo-prose" style="color:var(--green);margin-bottom:12px">&#x2713; No structural red flags triggered.</p>`;
+  const riskNarrative = m.key_risk_narrative
+    || ((m.key_risks || []).length > 0 ? m.key_risks.join(" ") : "No additional material risks identified beyond the flag codes above.");
+  // PDF-only flag table — Change 1: name column, Change 2: severity sort, Change 3: rubric cleanup
+  // Standard RF code → human name lookup (covers all 25 defined codes)
+  const _rfNames = {
+    "RF-01":"GOING CONCERN",          "RF-02":"CUSTOMER CONCENTRATION",
+    "RF-03":"REVENUE QUALITY",        "RF-04":"INSIDER LIQUIDITY GRAB",
+    "RF-05":"RUNWAY RISK",            "RF-06":"GOVERNANCE RISK",
+    "RF-07":"VALUATION DISCONNECT",   "RF-08":"MANAGEMENT RED FLAGS",
+    "RF-09":"RELATED PARTY RISK",     "RF-10":"AUDIT ISSUES",
+    "RF-11":"MARGIN RISK",            "RF-12":"REGULATORY OVERHANG",
+    "RF-13":"MARKET TIMING RISK",     "RF-14":"CAPITAL STRUCTURE RISK",
+    "RF-15":"PRODUCT CONCENTRATION",  "RF-16":"GEOGRAPHIC CONCENTRATION",
+    "RF-17":"TECHNOLOGY OBSOLESCENCE","RF-18":"WORKING CAPITAL STRESS",
+    "RF-19":"PROCEEDS QUALITY",       "RF-20":"SYNDICATE SPREAD RISK",
+    "RF-21":"PE / SPONSOR OVERHANG",  "RF-22":"SMALL FIRM SUITABILITY",
+    "RF-23":"INSIDER LIQUIDITY OVERHANG","RF-24":"AUDITOR QUALITY RISK",
+    "RF-25":"ACCOUNTING QUALITY RISK"
+  };
+  // Parse a flag into { name, sev, desc } regardless of string or object format
+  const _parseFlag = f => {
+    if (typeof f === "string") {
+      // Format: "RF-XX FLAG NAME — description text"
+      const spIdx = f.indexOf(" ");
+      const rest  = spIdx > -1 ? f.slice(spIdx + 1) : f;
+      const dIdx  = rest.indexOf(" — ");
+      return {
+        name: dIdx > -1 ? rest.slice(0, dIdx).trim() : rest.trim(),
+        sev:  "",
+        desc: dIdx > -1 ? rest.slice(dIdx + 3).trim() : ""
+      };
+    }
+    const rawDesc = f.narrative || f.description || "";
+    const code    = f.flag_id  || f.code || "RF";
+    // Use label field directly if present, otherwise derive from code
+    let name;
+    if (f.label) {
+      name = f.label.toUpperCase();
+    } else {
+      const dIdx = rawDesc.indexOf(" — ");
+      const hasPrefix = dIdx > 0 && dIdx < 50;
+      if (hasPrefix) {
+        name = rawDesc.slice(0, dIdx).trim();
+      } else {
+        name = /^RF-[A-Za-z]/.test(code)
+          ? code.replace(/^RF-/, "").replace(/-/g, " ")
+          : (_rfNames[code] || code);
+      }
+    }
+    return { name, sev: f.severity || "", desc: rawDesc };
+  };
+  // Change 3: strip trailing underwriter-rubric language from description
+  const _cleanRubric = s => s
+    .replace(/\s*[—–-]?\s*AUTOMATIC PASS[^.]*\.?\s*$/i, "")
+    .replace(/\s*Recommend(?:ed)?\s+PASS[^.]*\.?\s*$/i, "")
+    .replace(/\s*[—–-]\s*no exceptions\.?\s*$/i, "")
+    .trim();
+  // Change 2: sort by severity CRITICAL→HIGH→MEDIUM→LOW, stable within tier
+  const _sevOrd = {critical:0, high:1, medium:2, low:3};
+  const _getSev = f => typeof f === "string" ? 4 : (_sevOrd[(f.severity||"").toLowerCase()] ?? 4);
+  const _flags  = (m.red_flags || []).filter(f => typeof f === "string" || f.triggered !== false);
+  const _sorted = [..._flags].map((f, i) => ({f, i})).sort((a, b) => _getSev(a.f) - _getSev(b.f) || a.i - b.i);
+  const pdfFlagRows = _sorted.map(({f}) => {
+    const p    = _parseFlag(f);
+    const desc = _cleanRubric(p.desc) || p.desc;
+    const cls  = ({critical:"pft-critical",high:"pft-high",medium:"pft-medium",low:"pft-low"})[(p.sev||"").toLowerCase()] || "pft-none";
+    return `<tr><td class="pft-code">${p.name}</td><td class="pft-sev"><span class="pft-badge ${cls}">${p.sev||"—"}</span></td><td class="pft-desc">${desc}</td></tr>`;
+  }).join("");
+  const pdfFlagTable = pdfFlagRows
+    ? `<table class="pdf-flag-table"><thead><tr><th class="pft-th">Flag</th><th class="pft-th">Severity</th><th class="pft-th">Description</th></tr></thead><tbody>${pdfFlagRows}</tbody></table>`
+    : `<p class="pdf-flag-table" style="color:#1a7a4e;font-family:'Libre Baskerville',serif;font-size:11px">&#x2713; No structural red flags triggered.</p>`;
+
+  // Amendment banner
+  const amendmentHtml = m.is_amendment
+    ? `<div class="amendment-banner">
+        <span class="amd-tag">AMENDED</span>
+        <div class="amd-body">
+          ${m.prior_memo_date
+            ? `<strong>S-1/A</strong> — Amendment to the original S-1 filed on <strong>${m.prior_memo_date}</strong>.`
+            : `<strong>S-1/A</strong> — Amendment filing. No prior memo found on record.`}
+        </div>
+      </div>` : "";
+
+  // Strip leading numbering Claude may have prepended (e.g. "1. ", "1) ")
+  const stripLeadingNum = s => String(s).replace(/^\s*\d+[.):\-]\s*/, "");
+
+  // Conditions / pass reasons
+  const condHtml = m.recommendation === "CONDITIONAL" && (m.conditions || []).length > 0
+    ? `<div class="memo-section">
+        <h3><span class="section-num">03</span> Conditions for Underwriting</h3>
+        <div class="conditions-list">${m.conditions.map(c =>
+          `<div class="condition-item"><span class="condition-text">${stripLeadingNum(c)}</span></div>`
+        ).join("")}</div>
+      </div>` : "";
+  const passHtml = m.recommendation === "PASS" && (m.pass_reasons || []).length > 0
+    ? `<div class="memo-section">
+        <h3><span class="section-num">03</span> Reasons for Pass</h3>
+        <div class="conditions-list pass-list">${m.pass_reasons.map(c =>
+          `<div class="condition-item" style="background:rgba(224,82,82,.05);border-color:rgba(224,82,82,.2)">
+            <span class="condition-text">${stripLeadingNum(c)}</span>
+          </div>`
+        ).join("")}</div>
+      </div>` : "";
+
+  // Score adjustments note (RF-20 penalty etc.)
+  const adjNote = (scores.adjustments || []).length > 0
+    ? `<div class="score-adj-note">⚠ Score adjusted: ${scores.adjustments.map(a => `${a.rule} (${a.penalty} pts)`).join("; ")}</div>`
+    : "";
+
+  // ── Build Proceeds tab content ──────────────────────────────────────────
+  const uop     = m.use_of_proceeds || {};
+  const offerMM = m.offering_size_usd_millions;
+  const pctFmt  = (v, label) => {
+    if (v == null || v === 0) return "";
+    const mm = offerMM != null ? ` ($${(offerMM * v / 100).toFixed(0)}M)` : "";
+    return `<div class="legend-item"><span class="legend-dot" style="background:${label.col}"></span>${label.name}: <strong>${v.toFixed(0)}%</strong>${mm}</div>`;
+  };
+  const cats = [
+    { key:"growth_capital_pct",      name:"Growth Capital",       col:"var(--green)",  cls:"pbar-growth"  },
+    { key:"debt_repayment_pct",      name:"Debt Repayment",       col:"var(--amber)",  cls:"pbar-debt"    },
+    { key:"sponsor_distributions_pct",name:"Sponsor Distribution",col:"#e07b54",       cls:"pbar-sponsor" },
+    { key:"insider_liquidity_pct",   name:"Insider Liquidity",    col:"var(--red)",    cls:"pbar-insider" },
+    { key:"general_corporate_pct",   name:"General Corporate",    col:"var(--text-dim)",cls:"pbar-general"},
+  ];
+  const barSegs = cats.map(c => {
+    const v = uop[c.key] || 0;
+    return v > 0 ? `<div class="pbar-seg ${c.cls}" style="width:${v}%" title="${c.name}: ${v}%"></div>` : "";
+  }).join("");
+  const legendItems = cats.map(c => pctFmt(uop[c.key], c)).join("");
+  const rf19Banner = uop.proceeds_flag_rf19
+    ? `<div class="rf19-banner">⚑ RF-19 PROCEEDS QUALITY — ${(uop.total_non_operational_pct||0).toFixed(0)}% of gross proceeds directed to non-operational uses (threshold: 30%)</div>`
+    : "";
+  const hasProceeds = cats.some(c => uop[c.key] != null && uop[c.key] > 0);
+  const proceedsContent = `
+    ${rf19Banner}
+    ${hasProceeds ? `
+      <div class="proceeds-bar-wrap">
+        <div class="proceeds-bar">${barSegs}</div>
+        <div class="proceeds-legend">${legendItems}</div>
+      </div>` : `<p style="font-size:12px;color:var(--text-dim);margin:16px 0">No proceeds breakdown available for this filing.</p>`}
+    ${uop.proceeds_narrative ? `<p class="proceeds-narrative">${uop.proceeds_narrative}</p>` : ""}
+  `;
+
+  // ── Shared header (outside tabs) ───────────────────────────────────────
+  const sharedHeader = `
+    <div class="memo-header">
+      <div class="memo-header-top">
+        <div>
+          <div class="memo-company">${m.company_name || "—"}</div>
+          <div class="memo-ticker">${[m.proposed_ticker, m.exchange].filter(Boolean).join(" · ") || "Ticker TBD"}</div>
+        </div>
+        <span class="memo-rec-large rec-${m.recommendation}" style="color:${recColor};background:${recColor}18;border:1px solid ${recColor}40">
+          ${m.recommendation || "—"}
+        </span>
+      </div>
+      <div class="memo-header-meta">
+        <div class="meta-item"><div class="meta-lbl">Sector</div><div class="meta-val">${m.sector || "—"}</div></div>
+        <div class="meta-item"><div class="meta-lbl">Offering</div><div class="meta-val">${m.offering_size_usd_millions != null ? "$"+m.offering_size_usd_millions+"M" : "—"}</div></div>
+        <div class="meta-item"><div class="meta-lbl">Price Range</div><div class="meta-val">${m.proposed_price_range || "—"}</div></div>
+        <div class="meta-item"><div class="meta-lbl">Auditor</div><div class="meta-val" style="${m.auditor_flag ? 'color:var(--amber)' : ''}">${m.auditor || "—"}</div></div>
+        <div class="meta-item"><div class="meta-lbl">Filed</div><div class="meta-val">${m.filing_date || "—"}</div></div>
+      </div>
+    </div>
+
+    <div class="score-gauge-row">
+      <div class="gauge-circle">
+        <svg viewBox="0 0 72 72" width="72" height="72">
+          <circle class="gauge-bg"   cx="36" cy="36" r="${gaugeR}"/>
+          <circle class="gauge-fill" cx="36" cy="36" r="${gaugeR}"
+            stroke="${gaugeColor}" stroke-dasharray="${gaugeC}" stroke-dashoffset="${gaugeFill}"/>
+        </svg>
+        <div class="gauge-label">${total != null ? total.toFixed(0) : "—"}</div>
+      </div>
+      <div class="score-dimensions">${dimBars}</div>
+    </div>
+    ${adjNote}
+  `;
+
+  document.getElementById("memo-panel").innerHTML = `
+    <div class="memo-header-wrap">${sharedHeader}</div>
+
+    <div id="memo-tab-0" class="memo-tab-panel">
+      ${amendmentHtml}
+
+      <div class="memo-section">
+        <h3><span class="section-num">01</span> Executive Summary</h3>
+        <p class="memo-prose">${m.executive_summary || "Not available."}</p>
+      </div>
+
+      <div class="memo-section">
+        <h3><span class="section-num">02</span> Deal Committee Recommendation</h3>
+        <div class="committee-block">${m.deal_committee_narrative || "Not available."}</div>
+      </div>
+
+      ${condHtml}${passHtml}
+
+      <div class="memo-section">
+        <h3><span class="section-num">04</span> Risk &amp; Red Flags</h3>
+        ${flagListHtml}
+        ${pdfFlagTable}
+        <p class="memo-prose key-risk-narrative">${riskNarrative}</p>
+      </div>
+
+      ${buildSection15(m)}
+
+      <div class="memo-section">
+        <h3><span class="section-num">06</span> Business Overview</h3>
+        <p class="memo-prose">${m.business_overview || "Not available."}</p>
+      </div>
+
+      <div class="memo-section">
+        <h3><span class="section-num">07</span> Financial Snapshot</h3>
+        ${finTable}
+      </div>
+
+      <div class="memo-section">
+        <h3><span class="section-num">08</span> Use of Proceeds</h3>
+        ${proceedsContent}
+      </div>
+
+      ${valSection}
+
+      ${buildSection14(m)}
+
+      ${m.macro_sector_context ? `<div class="memo-section">
+        <h3><span class="section-num">11</span> Macro &amp; Sector Context</h3>
+        <p class="memo-prose">${m.macro_sector_context}</p>
+      </div>` : ""}
+
+      ${(m.lead_underwriters || []).length > 0 ? `<div class="memo-section">
+        <h3><span class="section-num">12</span> Underwriting Syndicate</h3>
+        <p class="memo-prose">${m.lead_underwriters.join(" · ")} &nbsp;—&nbsp; ${m.underwriter_tier || ""} &nbsp;·&nbsp; ${m.ipo_type || ""}</p>
+      </div>` : ""}
+
+      ${buildSection11(m)}
+      ${buildSection10(m)}
+      ${buildSection12(m)}
+      ${buildSection13(m)}
+      ${buildSection16(m)}
+      ${buildSection17(m)}
+
+      <div class="memo-disclaimer">
+        This memo was generated by Claude Opus (AI-assisted analysis) on ${m.run_timestamp ? new Date(m.run_timestamp).toLocaleString() : "—"}.
+        ${m.live_comps_enriched ? "Comparable company multiples sourced from live market data via yfinance. " : ""}
+        ${dam.matched_industry ? "Sector benchmarks sourced from Damodaran NYU Stern (January 2026). " : ""}
+        It must be reviewed and approved by a licensed capital markets professional before any underwriting decision is made.
+        This analysis does not constitute investment advice or a commitment to underwrite.
+      </div>
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────────────────
+// MEMO SECTION BUILDERS (10-15)
+// ─────────────────────────────────────────────────────────
+function buildSection10(m) {
+  const la = m.lockup_analysis || {};
+  if (!la.lockup_days && la.primary_shares_millions == null && la.secondary_shares_millions == null) return "";
+  const rf23 = la.rf23_triggered
+    ? `<div class="rf-banner rf-banner-red">&#x2691; RF-23 INSIDER LIQUIDITY OVERHANG &mdash; ${la.rf23_reason || "Secondary shares exceed 20% of offering."}</div>`
+    : "";
+  const carveout = la.lockup_carveouts
+    ? `<p style="font-size:11px;color:var(--text-dim);margin-top:8px">Carve-outs: ${la.lockup_carveouts}</p>`
+    : "";
+  const rows = [
+    ["Lockup Period",             la.lockup_days != null ? `${la.lockup_days} days` : "&mdash;"],
+    ["Primary Shares",            la.primary_shares_millions != null ? `${la.primary_shares_millions}M` : "&mdash;"],
+    ["Secondary Shares",          la.secondary_shares_millions != null ? `${la.secondary_shares_millions}M` : "&mdash;"],
+    ["Secondary % of Offering",   la.secondary_shares_pct_offering != null ? `${la.secondary_shares_pct_offering.toFixed(1)}%` : "&mdash;"],
+  ];
+  return `<div class="memo-section">
+    <h3><span class="section-num">14</span> Lockup &amp; Insider Selling</h3>
+    ${rf23}
+    <table class="fin-table">
+      <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
+      <tbody>${rows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
+    </table>
+    ${carveout}
+  </div>`;
+}
+
+function buildSection11(m) {
+  const sq = m.syndicate_quality || {};
+  if (!sq.lead_bookrunner && !sq.lead_bookrunner_tier) return "";
+  const tier = (sq.lead_bookrunner_tier || "").toLowerCase();
+  const tierClass = tier.includes("1") ? "tier-1" : tier.includes("2") ? "tier-2" : "tier-3";
+  const rf20 = sq.rf20_tier3_flag
+    ? `<div class="rf-banner rf-banner-amber">&#x2691; RF-20 UPGRADE &mdash; ${sq.rf20_tier3_reason || "Tier 3 lead bookrunner on a deal >$100M."}</div>`
+    : "";
+  return `<div class="memo-section">
+    <h3><span class="section-num">13</span> Syndicate Quality</h3>
+    ${rf20}
+    <table class="fin-table">
+      <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
+      <tbody>
+        <tr><td class="label-col">Lead Bookrunner</td><td class="val-col">${sq.lead_bookrunner || "&mdash;"}</td></tr>
+        <tr><td class="label-col">Tier</td><td class="val-col"><span class="tier-badge ${tierClass}">${sq.lead_bookrunner_tier || "&mdash;"}</span></td></tr>
+      </tbody>
+    </table>
+    ${sq.tier_assessment ? `<p style="font-size:12px;color:var(--text-mid);margin-top:10px;line-height:1.6;font-family:'Libre Baskerville',serif">${sq.tier_assessment}</p>` : ""}
+  </div>`;
+}
+
+function buildSection12(m) {
+  const allComps = (m.comparable_ipos || []).filter(c => c.company);
+  const primary   = allComps.filter(c => c.comp_type === "primary_ipo_comp");
+  const secondary = allComps.filter(c => c.comp_type === "secondary_ipo_comp");
+  // Legacy: comps without comp_type fall into primary for backwards compatibility
+  const legacy    = allComps.filter(c => !c.comp_type);
+  const primaryAll = [...primary, ...legacy];
+
+  const compTableRows = comps => comps.map(c => {
+    const popCls  = c.first_day_pop_pct    != null ? (c.first_day_pop_pct    >= 0 ? "pop-pos" : "pop-neg") : "";
+    const currCls = c.current_vs_offer_pct != null ? (c.current_vs_offer_pct >= 0 ? "pop-pos" : "pop-neg") : "";
+    const fmt = v => v != null ? `${v > 0 ? "+" : ""}${v.toFixed(1)}%` : "&mdash;";
+    return `<tr>
+      <td style="color:var(--text)">${c.company}</td>
+      <td style="color:var(--accent);font-weight:500">${c.ticker || "&mdash;"}</td>
+      <td>${c.ipo_date || "&mdash;"}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${c.offer_price != null ? "$"+c.offer_price.toFixed(2) : "&mdash;"}</td>
+      <td style="text-align:right" class="${popCls}">${fmt(c.first_day_pop_pct)}</td>
+      <td style="text-align:right" class="${currCls}">${fmt(c.current_vs_offer_pct)}</td>
+    </tr>`;
+  }).join("");
+
+  const thead = `<thead><tr><th>Company</th><th>Ticker</th><th>IPO Date</th><th style="text-align:right">Offer</th><th style="text-align:right">1-Day Pop</th><th style="text-align:right">Curr vs Offer</th></tr></thead>`;
+
+  const primaryBlock = primaryAll.length > 0 ? `
+    <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:0 0 6px">Primary Comps</p>
+    <table class="comp-table">${thead}<tbody>${compTableRows(primaryAll)}</tbody></table>` : "";
+
+  const secondaryBlock = secondary.length > 0 ? `
+    <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:16px 0 6px">Secondary Comps</p>
+    <table class="comp-table">${thead}<tbody>${compTableRows(secondary)}</tbody></table>` : "";
+
+  const body = (primaryAll.length + secondary.length) > 0
+    ? primaryBlock + secondaryBlock
+    : `<p style="font-size:12px;color:var(--text-dim);margin-top:4px">No comparable IPO data available.</p>`;
+
+  return `<div class="memo-section">
+    <h3><span class="section-num">15</span> Comparable IPO Performance</h3>
+    ${body}
+  </div>`;
+}
+
+function buildSection13(m) {
+  const aa = m.auditor_analysis || {};
+  if (!aa.auditor_name && !aa.auditor_tier) return "";
+  const tier = (aa.auditor_tier || "").toLowerCase();
+  const badgeCls = tier.includes("big 4") ? "tier-1" : tier.includes("mid") ? "tier-2" : "tier-3";
+  const mw = aa.material_weaknesses
+    ? `<p style="color:var(--amber);font-size:12px;font-weight:600;margin-top:10px">&#x26A0; Material weakness in internal controls disclosed.</p>`
+    : "";
+  const rf24 = aa.rf24_triggered
+    ? `<div class="rf-banner rf-banner-red">&#x2691; RF-24 AUDITOR QUALITY RISK &mdash; ${aa.rf24_reason || "Non-Big 4 / non-recognized mid-tier auditor on a deal >$50M."}</div>`
+    : "";
+  return `<div class="memo-section">
+    <h3><span class="section-num">16</span> Auditor Quality</h3>
+    ${rf24}
+    <table class="fin-table">
+      <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
+      <tbody>
+        <tr><td class="label-col">Auditor</td><td class="val-col">${aa.auditor_name || "&mdash;"}</td></tr>
+        <tr><td class="label-col">Classification</td><td class="val-col"><span class="tier-badge ${badgeCls}">${aa.auditor_tier || "&mdash;"}</span></td></tr>
+      </tbody>
+    </table>
+    ${mw}
+  </div>`;
+}
+
+function buildSection14(m) {
+  const rq = m.revenue_quality || {};
+  if (!rq.recurring_vs_nonrecurring && !rq.quality_rating) return "";
+  const rating = (rq.quality_rating || "").toLowerCase();
+  const badgeCls = rating === "high" ? "rev-high" : rating === "medium" ? "rev-medium" : "rev-low";
+  const rows = [
+    ["Recurring vs Non-Recurring",    rq.recurring_vs_nonrecurring     || "&mdash;"],
+    ["Contracted vs Transactional",   rq.contracted_vs_transactional   || "&mdash;"],
+    ["Organic vs Acquisition-Driven", rq.organic_vs_acquisition_driven || "&mdash;"],
+  ];
+  // Suppress from PDF when pre-revenue — detected by zero/null TTM revenue or N/A quality rating
+  const rev = (m.financials || {}).revenue_usd_millions || {};
+  const isPreRevenue = (rev.ttm === 0 || rev.ttm == null) &&
+                       (rev.year_minus_1 === 0 || rev.year_minus_1 == null) &&
+                       (rating === "n/a" || rq.recurring_vs_nonrecurring === "N/A — pre-revenue");
+  return `<div class="memo-section${isPreRevenue ? " no-print" : ""}">
+    <h3><span class="section-num">10</span> Revenue Quality</h3>
+    <table class="fin-table" style="margin-bottom:12px">
+      <thead><tr><th>Dimension</th><th style="text-align:right">Assessment</th></tr></thead>
+      <tbody>${rows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
+    </table>
+    ${rq.quality_rating ? `<p style="margin-bottom:10px">Overall Quality: <span class="rev-quality-badge ${badgeCls}">${rq.quality_rating}</span></p>` : ""}
+    ${rq.quality_narrative ? `<p style="font-size:12px;color:var(--text-mid);line-height:1.7;font-family:'Libre Baskerville',serif">${rq.quality_narrative}</p>` : ""}
+  </div>`;
+}
+
+function buildSection15(m) {
+  const lr = m.litigation_regulatory || {};
+  if (!lr.litigation_risk_level && !lr.litigation_summary) return "";
+  const risk = (lr.litigation_risk_level || "none").toLowerCase();
+  const riskCls = risk === "none" ? "litig-none" : risk === "low" ? "litig-low" : risk === "medium" ? "litig-medium" : risk === "high" ? "litig-high" : "litig-critical";
+  const bools = [
+    ["Pending SEC Investigation / Enforcement", lr.pending_sec_investigations],
+    ["Pending FINRA Actions",                   lr.pending_finra_actions],
+    ["Material Class Action Lawsuits",          lr.class_action_suits],
+    ["Other Material Regulatory Proceedings",   lr.material_regulatory_proceedings],
+  ];
+  return `<div class="memo-section">
+    <h3><span class="section-num">05</span> Litigation &amp; Regulatory Exposure</h3>
+    ${lr.litigation_risk_level ? `<p style="margin-bottom:14px">Risk Level: <span class="litig-badge ${riskCls}">${lr.litigation_risk_level}</span></p>` : ""}
+    <div style="margin-bottom:14px">
+      ${bools.map(r => `<div class="bool-row">
+        <span class="${r[1] ? "bool-icon-yes" : "bool-icon-no"}">${r[1] ? "&#x2691;" : "&#x2713;"}</span>
+        <span>${r[0]}</span>
+        <span style="margin-left:auto;font-size:11px;font-weight:600;color:${r[1] ? "var(--red)" : "var(--green)"}">${r[1] ? "YES" : "NO"}</span>
+      </div>`).join("")}
+    </div>
+    ${lr.litigation_summary ? `<p style="font-size:12px;color:var(--text-mid);line-height:1.7;font-family:'Libre Baskerville',serif">${lr.litigation_summary}</p>` : ""}
+  </div>`;
+}
+
+function buildSection16(m) {
+  const ap = m.accounting_practices;
+  if (!ap) return "";
+
+  const score = ap.accounting_quality_score;
+  const items = ap.items || [];
+
+  const scoreCls = score == null ? "acct-score-mid"
+                 : score >= 8    ? "acct-score-high"
+                 : score >= 6    ? "acct-score-mid"
+                 : "acct-score-low";
+
+  const scoreBlock = score != null
+    ? `<div class="acct-score-block">
+        <div>
+          <div class="acct-score-label">Accounting Quality Score</div>
+          <div class="acct-score-num ${scoreCls}">${score}<span style="font-size:16px;color:var(--text-dim)">/10</span></div>
+        </div>
+        <div class="acct-score-text">${ap.accounting_quality_summary || ""}</div>
+       </div>`
+    : (ap.accounting_quality_summary
+        ? `<p class="memo-prose" style="margin-bottom:14px">${ap.accounting_quality_summary}</p>`
+        : "");
+
+  const rf25Banner = ap.rf25_triggered
+    ? `<div class="rf25-banner">&#9888; RF-25 TRIGGERED — Accounting Quality Score ${score}/10 &le; 5.${ap.rf25_reason ? " " + ap.rf25_reason : ""}</div>`
+    : "";
+
+  const rq  = m.revenue_quality || {};
+  const rev = (m.financials || {}).revenue_usd_millions || {};
+  const rqRating = (rq.quality_rating || "").toLowerCase();
+  const isPreRevenue = (rev.ttm === 0 || rev.ttm == null) &&
+                       (rev.year_minus_1 === 0 || rev.year_minus_1 == null) &&
+                       (rqRating === "n/a" || rq.recurring_vs_nonrecurring === "N/A — pre-revenue");
+  const preRevenueNote = isPreRevenue
+    ? `<p style="font-size:11px;color:var(--text-dim);font-style:italic;margin-bottom:12px">
+         Revenue quality (§14): N/A — pre-revenue company; no commercial revenue recognized in any reported period.
+       </p>`
+    : "";
+
+  const ratingBadge = r => {
+    if (!r) return "<span style='color:var(--text-dim)'>—</span>";
+    const key = r.toLowerCase().replace(/[\s-]+/g, "");
+    if (key === "conservative")        return `<span class="acct-badge acct-conservative">Conservative</span>`;
+    if (key === "standard")            return `<span class="acct-badge acct-standard">Standard</span>`;
+    if (key === "aggressive")          return `<span class="acct-badge acct-aggressive">Aggressive</span>`;
+    if (key.startsWith("highly") || key === "highlyaggressive")
+                                       return `<span class="acct-badge acct-highly">Highly Aggressive</span>`;
+    return `<span class="acct-badge acct-standard">${r}</span>`;
+  };
+
+  // Unique prefix so IDs don't collide if multiple memos are rendered
+  const uid = "acct" + Date.now();
+
+  const rows = items.length > 0
+    ? items.map((it, i) => {
+        const rowId = `${uid}_${i}`;
+        const detailParts = [];
+        const combined = [it.description, it.assessment].filter(Boolean).join(" ");
+        if (combined)        detailParts.push(`<span class="acct-detail-label">Policy &amp; Assessment</span>${combined}`);
+        if (it.earnings_impact) detailParts.push(`<span class="acct-detail-label">Earnings / B&amp;S Impact</span>${it.earnings_impact}`);
+        const hasDetail = detailParts.length > 0;
+        const mainRow = `<tr class="acct-row-expandable${hasDetail ? "" : ""}"
+          onclick="toggleAcctRow('${rowId}')">
+          <td><span class="acct-toggle">${hasDetail ? "&#9654;" : ""}</span>${it.category || it.key || "—"}</td>
+          <td>${ratingBadge(it.risk_rating)}</td>
+        </tr>`;
+        const detailRow = hasDetail
+          ? `<tr class="acct-detail-row" id="${rowId}">
+              <td colspan="2"><div class="acct-detail-body">${detailParts.join("")}</div></td>
+            </tr>`
+          : "";
+        return mainRow + detailRow;
+      }).join("")
+    : `<tr><td colspan="2" style="color:var(--text-dim);font-style:italic;padding:12px 10px">No accounting items available.</td></tr>`;
+
+  return `<div class="memo-section">
+    <h3><span class="section-num">17</span> Accounting Practices</h3>
+    ${rf25Banner}
+    ${scoreBlock}
+    ${preRevenueNote}
+    <table class="acct-table">
+      <thead><tr>
+        <th>Category</th>
+        <th style="text-align:right">Risk Rating</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="acct-hint">Click any row to expand policy details.</p>
+  </div>`;
+}
+
+function toggleAcctRow(id) {
+  const detail = document.getElementById(id);
+  if (!detail) return;
+  const isOpen = detail.classList.toggle("open");
+  // Walk back to the preceding <tr> to rotate the toggle arrow
+  const mainRow = detail.previousElementSibling;
+  if (mainRow) mainRow.classList.toggle("open", isOpen);
+}
+
+function buildSection17(m) {
+  const esg = m.esg_disclosure;
+  if (!esg) return "";
+
+  const composite = esg.composite_score;
+  const E = esg.environmental || {};
+  const S = esg.social        || {};
+  const G = esg.governance    || {};
+
+  const scoreCls = v => v == null ? "esg-score-mid"
+                      : v >= 70   ? "esg-score-high"
+                      : v >= 40   ? "esg-score-mid"
+                      : "esg-score-low";
+
+  const barCls = v => v == null ? "esg-bar-mid"
+                    : v >= 70   ? "esg-bar-high"
+                    : v >= 40   ? "esg-bar-mid"
+                    : "esg-bar-low";
+
+  const compositeBlock = composite != null
+    ? `<div class="esg-composite-block">
+        <div>
+          <div class="esg-composite-label">ESG Disclosure Score</div>
+          <div class="esg-composite-num ${scoreCls(composite)}">${composite.toFixed ? composite.toFixed(1) : composite}<span style="font-size:16px;color:var(--text-dim)">/100</span></div>
+        </div>
+        <div class="esg-composite-text">${esg.disclosure_narrative || ""}</div>
+       </div>`
+    : (esg.disclosure_narrative
+        ? `<p class="memo-prose" style="margin-bottom:14px">${esg.disclosure_narrative}</p>`
+        : "");
+
+  const pillarCard = (letter, label, weight, data) => {
+    const score = data.score;
+    const pct   = score != null ? Math.min(100, Math.max(0, score)) : 0;
+    const hl    = (data.highlights || []).slice(0, 4);
+    const gaps  = (data.gaps       || []).slice(0, 4);
+    return `<div class="esg-pillar">
+      <div class="esg-pillar-header">
+        <span class="esg-pillar-letter ${scoreCls(score)}">${letter}</span>
+        <span class="esg-pillar-score ${scoreCls(score)}">${score != null ? score : "—"}</span>
+        <span class="esg-pillar-weight">${label}&nbsp;·&nbsp;${weight}</span>
+      </div>
+      <div class="esg-bar-track"><div class="esg-bar-fill ${barCls(score)}" style="width:${pct}%"></div></div>
+      ${hl.length   ? `<div class="esg-list-label">Disclosed</div><ul class="esg-ul">${hl.map(x => `<li>${x}</li>`).join("")}</ul>`   : ""}
+      ${gaps.length ? `<div class="esg-list-label">Gaps</div><ul class="esg-ul gaps">${gaps.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+    </div>`;
+  };
+
+  return `<div class="memo-section">
+    <h3><span class="section-num">18</span> ESG Disclosure Score</h3>
+    ${compositeBlock}
+    <div class="esg-pillars">
+      ${pillarCard("E", "Environmental", "30%", E)}
+      ${pillarCard("S", "Social",        "35%", S)}
+      ${pillarCard("G", "Governance",    "35%", G)}
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// MEMO TAB SWITCHER
+// ─────────────────────────────────────────────────────────
+function switchMemoTab(idx, btn) {
+  const panel = document.getElementById("memo-panel");
+  panel.querySelectorAll(".memo-tab").forEach((t, i) => {
+    t.classList.toggle("active", i === idx);
+  });
+  panel.querySelectorAll(".memo-tab-panel").forEach((p, i) => {
+    p.style.display = i === idx ? "" : "none";
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// EXPORT: CSV
+// ─────────────────────────────────────────────────────────
+function exportCSV() {
+  const s = currentDate && sessions[currentDate];
+  if (!s || !s.companies || s.companies.length === 0) {
+    alert("No data loaded for the current date. Select a session first.");
+    return;
+  }
+  const headers = [
+    "Company", "Ticker", "Sector", "Offering ($M)",
+    "Recommendation", "Score", "Red Flags", "Going Concern", "Amendment", "Date"
+  ];
+  const rows = s.companies.map(c => [
+    c.company_name    || "",
+    c.proposed_ticker || "",
+    c.sector          || "",
+    c.offering_size_usd_millions != null ? c.offering_size_usd_millions : "",
+    c.recommendation  || "",
+    c.score           != null ? c.score.toFixed(1) : "",
+    c.red_flag_count  || 0,
+    c.going_concern   ? "YES" : "NO",
+    c.is_amendment    ? "YES" : "NO",
+    currentDate
+  ]);
+  const csv = [headers, ...rows]
+    .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url;
+  a.download = `IPO_Screener_${currentDate}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─────────────────────────────────────────────────────────
+// EXPORT: PDF (print current memo)
+// ─────────────────────────────────────────────────────────
+function exportPDF() {
+  if (!currentCompany) {
+    alert("Select a company memo first, then use PDF export.");
+    return;
+  }
+
+  const panel  = document.getElementById("memo-panel");
+  const injected = [];
+
+  // ── Part dividers ────────────────────────────────────────────────────────
+  const partDefs = [
+    { secNum: "01", part: "Part I",   title: "Recommendation"                },
+    { secNum: "04", part: "Part II",  title: "Risk Assessment"               },
+    { secNum: "06", part: "Part III", title: "Business & Financial Analysis"  },
+    { secNum: "12", part: "Part IV",  title: "Deal Structure & Diligence"    },
+    { secNum: "18", part: "Part V",   title: "ESG"                           },
+  ];
+
+  for (const pd of partDefs) {
+    for (const span of panel.querySelectorAll(".section-num")) {
+      if (span.textContent.trim() === pd.secNum) {
+        const section = span.closest(".memo-section");
+        if (section) {
+          const div = document.createElement("div");
+          div.className = "pdf-part-divider";
+          div.innerHTML =
+            `<div class="pdf-divider-top-rule"></div>` +
+            `<span class="pdf-part-label">${pd.part} · ${pd.title}</span>`;
+          section.parentNode.insertBefore(div, section);
+          injected.push(div);
+        }
+        break;
+      }
+    }
+  }
+
+  window.onafterprint = function () {
+    injected.forEach(d => d.parentNode && d.parentNode.removeChild(d));
+    window.onafterprint = null;
+  };
+  window.print();
+}
+
+// ─────────────────────────────────────────────────────────
+// ANALYTICS
+// ─────────────────────────────────────────────────────────
+function renderAnalytics() {
+  // Aggregate all companies from all loaded sessions
+  const allCompanies = [];
+  const dailyData    = [];
+
+  for (const [date, s] of Object.entries(sessions)) {
+    dailyData.push({
+      date,
+      total:      s.total_filings    || 0,
+      underwrite: s.underwrite_count  || 0,
+      conditional:s.conditional_count || 0,
+      pass:       s.pass_count        || 0,
+    });
+    for (const c of (s.companies || [])) {
+      allCompanies.push({ ...c, date });
+    }
+  }
+
+  dailyData.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Sector aggregation
+  const sectorMap = {};
+  for (const c of allCompanies) {
+    const sec = c.sector || "Unknown";
+    if (!sectorMap[sec]) sectorMap[sec] = { count: 0, scores: [], uw: 0, total: 0 };
+    sectorMap[sec].count++;
+    sectorMap[sec].total++;
+    if (c.score != null) sectorMap[sec].scores.push(c.score);
+    if (c.recommendation === "UNDERWRITE") sectorMap[sec].uw++;
+  }
+
+  // Summary stats
+  const totalFilings   = allCompanies.length;
+  const totalUW        = allCompanies.filter(c => c.recommendation === "UNDERWRITE").length;
+  const uwRate         = totalFilings > 0 ? (totalUW / totalFilings * 100).toFixed(1) : "—";
+  const scoredComps    = allCompanies.filter(c => c.score != null);
+  const avgScore       = scoredComps.length > 0
+    ? (scoredComps.reduce((a, c) => a + c.score, 0) / scoredComps.length).toFixed(1) : "—";
+  const avgFlags       = allCompanies.length > 0
+    ? (allCompanies.reduce((a, c) => a + (c.red_flag_count || 0), 0) / allCompanies.length).toFixed(1) : "—";
+  const sessionCount   = Object.keys(sessions).length;
+
+  const subtitle = `${totalFilings} companies across ${sessionCount} sessions`;
+  document.getElementById("analytics-subtitle").textContent = subtitle;
+
+  // Stat cards
+  document.getElementById("analytics-stats").innerHTML = `
+    <div class="analytics-stat-card">
+      <div class="a-lbl">Total Filings Analyzed</div>
+      <div class="a-val">${totalFilings}</div>
+      <div class="a-sub">${sessionCount} sessions</div>
+    </div>
+    <div class="analytics-stat-card">
+      <div class="a-lbl">UNDERWRITE Rate</div>
+      <div class="a-val" style="color:var(--green)">${uwRate}%</div>
+      <div class="a-sub">${totalUW} of ${totalFilings} filings</div>
+    </div>
+    <div class="analytics-stat-card">
+      <div class="a-lbl">Average Score</div>
+      <div class="a-val">${avgScore}</div>
+      <div class="a-sub">out of 100 pts</div>
+    </div>
+    <div class="analytics-stat-card">
+      <div class="a-lbl">Avg Red Flags</div>
+      <div class="a-val" style="color:var(--amber)">${avgFlags}</div>
+      <div class="a-sub">per filing</div>
+    </div>
+  `;
+
+  // Sector data for charts (top 8 sectors by count)
+  const sectors = Object.entries(sectorMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 8);
+  const sectorLabels  = sectors.map(([s]) => s.length > 20 ? s.slice(0, 18) + "…" : s);
+  const sectorCounts  = sectors.map(([, d]) => d.count);
+  const sectorAvgScores = sectors.map(([, d]) =>
+    d.scores.length > 0 ? +(d.scores.reduce((a,b) => a+b, 0) / d.scores.length).toFixed(1) : null
+  );
+  const sectorUWRates = sectors.map(([, d]) =>
+    d.total > 0 ? +(d.uw / d.total * 100).toFixed(1) : 0
+  );
+
+  // Daily volume for timeline
+  const last30 = dailyData.slice(-30);
+  const dailyLabels = last30.map(d => {
+    const dt = new Date(d.date + "T12:00:00");
+    return dt.toLocaleDateString("en-US", { month:"short", day:"numeric" });
+  });
+  const dailyCounts = last30.map(d => d.total);
+  const dailyUWCounts = last30.map(d => d.underwrite);
+
+  // Chart colors
+  const chartDefaults = {
+    color: "#9aa3b2",
+    borderColor: "#2a3040",
+  };
+  Chart.defaults.color = chartDefaults.color;
+
+  // Build chart grid HTML
+  document.getElementById("analytics-grid").innerHTML = `
+    <div class="chart-card">
+      <div class="chart-title">Filing Volume by Sector</div>
+      <div class="chart-subtitle">Total filings analyzed per sector</div>
+      <div class="chart-container"><canvas id="chart-sector-vol"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Average Score by Sector</div>
+      <div class="chart-subtitle">Mean weighted score (0–100)</div>
+      <div class="chart-container"><canvas id="chart-sector-score"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">UNDERWRITE Rate by Sector</div>
+      <div class="chart-subtitle">% of filings recommended for underwriting</div>
+      <div class="chart-container"><canvas id="chart-sector-uw"></canvas></div>
+    </div>
+    <div class="chart-card chart-card-full">
+      <div class="chart-title">Daily Filing Volume</div>
+      <div class="chart-subtitle">Filings analyzed per session (last ${last30.length} sessions)</div>
+      <div class="chart-container-sm"><canvas id="chart-daily"></canvas></div>
+    </div>
+  `;
+
+  // Destroy old chart instances if re-rendering
+  ["chart-sector-vol","chart-sector-score","chart-sector-uw","chart-daily"].forEach(id => {
+    if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+  });
+
+  const barOpts = (horizontal = true) => ({
+    responsive: true, maintainAspectRatio: false,
+    indexAxis: horizontal ? "y" : "x",
+    plugins: { legend: { display: false }, tooltip: { backgroundColor: "#171b22", borderColor: "#2a3040", borderWidth: 1 } },
+    scales: {
+      x: { grid: { color: "#1e2530" }, ticks: { color: "#6b7585", font: { size: 10 } } },
+      y: { grid: { color: "#1e2530" }, ticks: { color: "#9aa3b2", font: { size: 10 } } },
+    }
+  });
+
+  // Chart 1: Filing volume by sector (horizontal bar)
+  chartInstances["chart-sector-vol"] = new Chart(
+    document.getElementById("chart-sector-vol"),
+    {
+      type: "bar",
+      data: {
+        labels: sectorLabels,
+        datasets: [{ data: sectorCounts, backgroundColor: "rgba(59,130,246,.35)", borderColor: "#3b82f6", borderWidth: 1 }]
+      },
+      options: barOpts(true)
+    }
+  );
+
+  // Chart 2: Avg score by sector
+  chartInstances["chart-sector-score"] = new Chart(
+    document.getElementById("chart-sector-score"),
+    {
+      type: "bar",
+      data: {
+        labels: sectorLabels,
+        datasets: [{
+          data: sectorAvgScores,
+          backgroundColor: sectorAvgScores.map(s =>
+            s >= 80 ? "rgba(46,204,138,.35)" : s >= 55 ? "rgba(232,169,53,.35)" : "rgba(224,82,82,.3)"
+          ),
+          borderColor: sectorAvgScores.map(s =>
+            s >= 80 ? "#2ecc8a" : s >= 55 ? "#e8a935" : "#e05252"
+          ),
+          borderWidth: 1
+        }]
+      },
+      options: barOpts(true)
+    }
+  );
+
+  // Chart 3: UW rate by sector
+  chartInstances["chart-sector-uw"] = new Chart(
+    document.getElementById("chart-sector-uw"),
+    {
+      type: "bar",
+      data: {
+        labels: sectorLabels,
+        datasets: [{ data: sectorUWRates, backgroundColor: "rgba(46,204,138,.3)", borderColor: "#2ecc8a", borderWidth: 1 }]
+      },
+      options: {
+        ...barOpts(true),
+        scales: {
+          ...barOpts(true).scales,
+          x: { ...barOpts(true).scales.x, max: 100, ticks: { ...barOpts(true).scales.x.ticks, callback: v => v + "%" } }
+        }
+      }
+    }
+  );
+
+  // Chart 4: Daily volume timeline (grouped bar)
+  chartInstances["chart-daily"] = new Chart(
+    document.getElementById("chart-daily"),
+    {
+      type: "bar",
+      data: {
+        labels: dailyLabels,
+        datasets: [
+          { label: "Total", data: dailyCounts, backgroundColor: "rgba(59,130,246,.3)", borderColor: "#3b82f6", borderWidth: 1 },
+          { label: "UNDERWRITE", data: dailyUWCounts, backgroundColor: "rgba(46,204,138,.4)", borderColor: "#2ecc8a", borderWidth: 1 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: "#9aa3b2", font: { size: 10 }, boxWidth: 10 } },
+          tooltip: { backgroundColor: "#171b22", borderColor: "#2a3040", borderWidth: 1 }
+        },
+        scales: {
+          x: { stacked: false, grid: { color: "#1e2530" }, ticks: { color: "#6b7585", font: { size: 9 }, maxRotation: 45 } },
+          y: { grid: { color: "#1e2530" }, ticks: { color: "#9aa3b2", font: { size: 10 }, stepSize: 1 } }
+        }
+      }
+    }
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────
+function fmtM(v) { return v != null ? `$${v}M` : "—"; }
+
+function escAttr(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function recColor(rec) {
+  return rec === "UNDERWRITE" ? "var(--green)" : rec === "CONDITIONAL" ? "var(--amber)" : "var(--red)";
+}
+
+// ─────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────
+renderWatchlist();
+loadSessions();
+</script>
+</body>
+</html>
