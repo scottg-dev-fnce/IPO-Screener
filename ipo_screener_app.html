@@ -1859,6 +1859,16 @@ function renderMemo(m) {
       <div class="meta-item"><div class="meta-lbl">Price Range</div><div class="meta-val">${m.proposed_price_range || "—"}</div></div>
       <div class="meta-item"><div class="meta-lbl">Auditor</div><div class="meta-val" style="${m.auditor_flag ? 'color:var(--amber)' : ''}">${m.auditor || "—"}</div></div>
       <div class="meta-item"><div class="meta-lbl">Filed</div><div class="meta-val">${m.filing_date || "—"}</div></div>
+      <div class="meta-item"><div class="meta-lbl">Underwriting</div><div class="meta-val">${(function(){
+        var ut = m.underwriting_type || "Not Disclosed";
+        if (ut !== "Best Efforts") return ut;
+        var sub = m.underwriting_subtype || "Standard";
+        if (sub === "Mini-Max") {
+          var min = m.underwriting_minimum_raise_usd != null ? " — Minimum: $" + m.underwriting_minimum_raise_usd + "M" : "";
+          return "Best Efforts: Mini-Max" + min;
+        }
+        return "Best Efforts: " + sub;
+      })()}</div></div>
     </div>
 
     ${amendmentHtml}

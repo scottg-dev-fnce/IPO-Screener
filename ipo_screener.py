@@ -92,6 +92,24 @@ Analyze the following from the filing text provided:
     - Use of proceeds breakdown (growth capital vs. selling shareholders)
     - Lead underwriters
     - Proposed price range
+    - Underwriting commitment type — extract from the "Underwriting" or "Plan of Distribution"
+      section of the S-1. Classify using the two-tier structure below:
+
+      Tier 1 — Primary type (set underwriting_type):
+        "Firm Commitment" — underwriter purchases all shares outright and guarantees the raise.
+                            This is the standard for most registered IPOs.
+        "Best Efforts"    — underwriter sells on behalf of the issuer with no purchase
+                            guarantee. Issuer bears the risk of a partial or failed raise.
+        "Not Disclosed"   — underwriting agreement not described in the filing text provided.
+
+      Tier 2 — Best Efforts sub-type (set underwriting_subtype; only if Tier 1 is Best Efforts):
+        "Mini-Max"    — offering proceeds only if a stated minimum dollar threshold is raised.
+                        Extract the exact minimum from the S-1 and store in
+                        underwriting_minimum_raise_usd (as a number, in USD millions).
+        "All-or-None" — offering proceeds only if the entire offering amount is raised.
+        "Standard"    — no minimum threshold condition.
+      If Tier 1 is Firm Commitment, set underwriting_subtype to null and
+      underwriting_minimum_raise_usd to null.
 
 [B] BUSINESS OVERVIEW
     - Core product/service
@@ -728,6 +746,9 @@ Use this exact schema:
   "lead_underwriters": [],
   "underwriter_tier": "",
   "ipo_type": "",
+  "underwriting_type": "",
+  "underwriting_subtype": null,
+  "underwriting_minimum_raise_usd": null,
   "syndicate_assessment": {
     "underwriter_count": null,
     "spread_risk_flag": false,
