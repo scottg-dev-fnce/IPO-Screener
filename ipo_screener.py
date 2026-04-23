@@ -189,12 +189,39 @@ Analyze the following from the filing text provided:
     - Note if this is a carve-out, spin-off, direct listing, or traditional IPO
 
 [K] MACRO & SECTOR CONTEXT
-    - Current market conditions for this sector (hot / cold / neutral)
-    - Recent comparable IPOs in same sector -- how did they trade post-IPO?
-    - Interest rate environment sensitivity (high-growth loss-making companies
-      are particularly rate-sensitive)
-    - Regulatory tailwinds or headwinds specific to this sector
-    - ESG considerations if material to investor base
+    Populate `macro_sector_context` as an object with four fields:
+      sector_thesis   — 2-3 sentence overview of current market conditions for this sector
+                        (hot / cold / neutral) and timing for this IPO
+      market_timing   — 1 sentence on recent comparable IPOs and how they have traded
+      bull_case       — array of strings: structural positives for this sector and company
+                        (regulatory support, secular demand drivers, rate sensitivity
+                        benefits, competitive moat tailwinds, etc.)
+      bear_case       — array of strings: structural risks for this sector and company
+                        (regulatory headwinds, cyclical exposure, rate sensitivity costs,
+                        competitive threats, ESG considerations if material, etc.)
+
+    SOURCING RULES — MANDATORY:
+    - Every bull_case and bear_case point MUST be attributed to a Tier 1 or Tier 2 source.
+      Any point that cannot be sourced to Tier 1 or Tier 2 must be OMITTED entirely.
+      No unattributed claims permitted.
+    - Each point must include a parenthetical citation, e.g.:
+        "AI infrastructure capex expected to reach $200B by 2027 (Goldman Sachs Research, Jan 2026)"
+        "GPU supply constraints easing in H2 2026 (Bloomberg, Mar 2026)"
+    - Tier 1 sources (highest priority — prefer over Tier 2 when both cover the same point):
+        WSJ, Bloomberg, Reuters, Financial Times (FT), NYT
+    - Tier 2 sources (use when Tier 1 not available; prefer institutional bank research and
+      rated agencies over market research firms within this tier):
+        Goldman Sachs Research, Morgan Stanley Research, JPMorgan Research,
+        Bank of America / Merrill Lynch, Citigroup, Wells Fargo Securities, Jefferies,
+        Deutsche Bank, IDC, Gartner, Forrester, Grand View Research, MarketsandMarkets,
+        Mordor Intelligence, PitchBook, CB Insights, Quilty Space, Bernstein Research,
+        Wolfe Research, Cowen, Raymond James, Needham & Company,
+        Bloomberg Intelligence, S&P Global Market Intelligence, Moody's, Fitch Ratings,
+        Refinitiv, Federal Reserve publications, SEC/EDGAR data,
+        Congressional Budget Office, Damodaran Online, World Bank, IMF reports
+    - When multiple sources cover the same point, always cite the highest-quality source
+      (Tier 1 over Tier 2; within Tier 2, bank research and rated agencies over market
+      research firms).
 
 [L] LOCKUP & INSIDER SELLING
     - Extract lockup period in days
@@ -743,7 +770,12 @@ Use this exact schema:
   "business_overview": "",
   "key_risk_narrative": "",
   "related_party_flags": [],
-  "macro_sector_context": "",
+  "macro_sector_context": {
+    "sector_thesis": "",
+    "market_timing": "",
+    "bull_case": [],
+    "bear_case": []
+  },
   "deal_committee_recommendation": "",
 
   "accounting_practices": {

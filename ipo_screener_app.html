@@ -1877,16 +1877,16 @@ function renderMemo(m) {
         ${(() => {
           const mc = m.macro_sector_context;
           if (typeof mc === "string") return `<p class="memo-prose">${mc}</p>`;
-          // Object: render thesis + tailwinds/headwinds/timing
+          // Object: render thesis + bull/bear case + timing
           const thesis    = mc.sector_thesis    || mc.overview || mc.description || "";
           const timing    = mc.market_timing    || "";
-          const tailwinds = (mc.sector_tailwinds || mc.tailwinds || []).filter(Boolean);
-          const headwinds = (mc.sector_headwinds || mc.headwinds || []).filter(Boolean);
+          const bullCase  = (mc.bull_case || mc.sector_tailwinds || mc.tailwinds || []).filter(Boolean);
+          const bearCase  = (mc.bear_case || mc.sector_headwinds || mc.headwinds || []).filter(Boolean);
           return [
             thesis  ? `<p class="memo-prose">${thesis}</p>` : "",
             timing  ? `<p class="memo-prose" style="margin-top:8px"><strong>Market Timing:</strong> ${timing}</p>` : "",
-            tailwinds.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--green);margin:12px 0 4px">Tailwinds</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${tailwinds.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
-            headwinds.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--red);margin:12px 0 4px">Headwinds</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${headwinds.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+            bullCase.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--green);margin:12px 0 4px">Bull Case</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${bullCase.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+            bearCase.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--red);margin:12px 0 4px">Bear Case</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${bearCase.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
           ].join("") || `<p class="memo-prose">${safeRender(mc)}</p>`;
         })()}
       </div>` : ""}
