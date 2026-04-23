@@ -540,26 +540,89 @@ RF-25 ACCOUNTING QUALITY RISK  -- Overall Accounting Quality Score of 5 or below
                                restatements. Review each item in the accounting_practices
                                block to understand specific risks.
 
-For each triggered flag, cite the exact section and language from the filing.
+For each triggered flag:
+  - Cite the exact section and language from the filing in the description field.
+  - Set affected_dimension to the JSON field name of the dimension deducted (e.g.
+    "financial_health_runway"). For RF-25 which deducts two dimensions, set the primary one.
+  - Set score_deduction to the numeric deduction applied (e.g. 2.5 for HIGH flags).
+    RF-01 and RF-22 have no numeric deduction — set score_deduction to null.
+  - Each red_flag object schema:
+      { "code": "RF-XX", "name": "...", "severity": "HIGH|MEDIUM|LOW|CRITICAL",
+        "triggered": true, "description": "...", "affected_dimension": "...",
+        "score_deduction": 2.5 }
 
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 SCORING RUBRIC (100-point scale)
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 
-Score each dimension 0-10. Each red flag in a dimension deducts 1.5-3 pts.
+Score each dimension 0-10 AFTER applying red flag deductions. weighted_total is computed
+as the sum of (raw_dimension_score × weight × 10) across all five dimensions.
 
-  DIMENSION                          WEIGHT
-  Business Model Quality               25%
-  Financial Health & Runway            15%
-  Market Size & Competitive Position   20%
-  Management Team & Governance         20%
-  Valuation Attractiveness             20%
+  DIMENSION                          WEIGHT   KEY (JSON field name)
+  Business Model Quality               25%    business_model_quality
+  Financial Health & Runway            15%    financial_health_runway
+  Market Size & Competitive Position   20%    market_competitive_position
+  Management Team & Governance         20%    management_governance
+  Valuation Attractiveness             20%    valuation_attractiveness
+
+RED FLAG DEDUCTION AMOUNTS BY SEVERITY:
+  CRITICAL  → AUTOMATIC PASS (score irrelevant — override immediately)
+  HIGH      → deduct 2.5 pts from the affected dimension score
+  MEDIUM    → deduct 1.5 pts from the affected dimension score
+  LOW       → deduct 1.0 pt  from the affected dimension score
+  (A dimension score cannot go below 0.0 regardless of total deductions.)
+
+RED FLAG → DIMENSION ASSIGNMENTS (explicit mapping — apply these deductions):
+
+  Business Model Quality (25%):
+    RF-02  Customer Concentration    HIGH    -2.5
+    RF-12  Regulatory Overhang       HIGH    -2.5
+    RF-15  Product Concentration     MEDIUM  -1.5
+    RF-17  Technology Obsolescence   HIGH    -2.5
+    RF-25  Accounting Quality Risk   HIGH    -2.5  (also deducts Financial Health)
+
+  Financial Health & Runway (15%):
+    RF-01  Going Concern             CRITICAL → AUTOMATIC PASS
+    RF-03  Revenue Quality           HIGH    -2.5
+    RF-05  Runway Risk               HIGH    -2.5
+    RF-10  Audit Issues              HIGH    -2.5
+    RF-11  Margin Risk               HIGH    -2.5
+    RF-14  Capital Structure Risk    HIGH    -2.5
+    RF-18  Working Capital Stress    MEDIUM  -1.5
+    RF-24  Auditor Quality Risk      MEDIUM  -1.5
+    RF-25  Accounting Quality Risk   HIGH    -2.5  (also deducts Business Model Quality)
+
+  Market Size & Competitive Position (20%):
+    RF-13  Market Timing Risk        MEDIUM  -1.5
+    RF-16  Geographic Concentration  MEDIUM  -1.5
+
+  Management Team & Governance (20%):
+    RF-04  Insider Liquidity Grab    HIGH    -2.5
+    RF-06  Governance Risk           HIGH    -2.5
+    RF-08  Management Red Flags      HIGH    -2.5
+    RF-09  Related Party Risk        MEDIUM  -1.5
+    RF-19  Proceeds Quality          HIGH    -2.5
+    RF-21  PE/Sponsor Overhang       MEDIUM  -1.5
+    RF-23  Insider Liquidity Overhang MEDIUM -1.5
+
+  Valuation Attractiveness (20%):
+    RF-07  Valuation Disconnect      HIGH    -2.5
+
+  NOTE — RF-20 (Syndicate Spread Risk) is applied as a post-hoc Python penalty to
+  weighted_total directly (-1.5 per excess underwriter, capped at -5). It does NOT
+  map to a dimension score. Do NOT apply it to any dimension; the pipeline handles it.
+  RF-22 (Small Firm Suitability) is a strong PASS signal — assign recommendation PASS.
 
 RECOMMENDATION THRESHOLDS:
   >=80  -> UNDERWRITE    -- Present to deal committee
   55-79 -> CONDITIONAL   -- List specific conditions required
   <55   -> PASS          -- Document primary reasons
-  RF-01 -> AUTOMATIC PASS regardless of score
+  RF-01 -> AUTOMATIC PASS regardless of score — set going_concern: true
+
+SCORING FLOOR RULE: If 3 or more HIGH or CRITICAL flags are triggered across all
+dimensions, weighted_total MUST be ≤55 (PASS territory) unless business model and
+market position are both exceptional (scores ≥8.5). A strong product in a structurally
+broken deal is still a PASS.
 
 DEAL COMMITTEE NARRATIVE:
   Populate the `deal_committee_recommendation` field with 2-3 sentences in institutional
@@ -2314,6 +2377,15 @@ def apply_scoring_adjustments(memo: dict) -> dict:
                 memo["recommendation"] = "CONDITIONAL"
             else:
                 memo["recommendation"] = "PASS"
+
+    # RF-01 going concern: enforce AUTOMATIC PASS regardless of composite score.
+    # This runs independently of whether a syndicate penalty fired.
+    if memo.get("going_concern") and memo.get("recommendation") != "PASS":
+        log.warning(
+            f"going_concern=true but recommendation was {memo.get('recommendation')} — "
+            "forcing PASS per RF-01 automatic override"
+        )
+        memo["recommendation"] = "PASS"
 
     return memo
 

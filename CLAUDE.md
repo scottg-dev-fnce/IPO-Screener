@@ -68,17 +68,58 @@ and renders them in a browser-based app with PDF export.
 | Financial Health & Runway | 15% |
 
 ### Score Thresholds
-- 80-100: UNDERWRITE — present to deal committee
-- 60-79: CONDITIONAL — present with conditions noted
-- 0-59: PASS — do not present
+- ≥80: UNDERWRITE — present to deal committee
+- 55–79: CONDITIONAL — present with conditions noted
+- <55: PASS — do not present
 
 ### Red Flag Deductions
-- Each triggered red flag deducts 1.5–3 pts from relevant dimension scores
-- RF-25 (accounting quality ≤5) deducts from Financial Health and
-  Business Model Quality
-- Automatic PASS triggers (regardless of score):
-  - RF-01: Going concern audit opinion
-  - RF-22: Sub-$50M offering with sub-$10M revenue
+Deduction amounts by severity (applied to the dimension score before weighting):
+- CRITICAL → AUTOMATIC PASS (RF-01 only); score_deduction: null
+- HIGH     → −2.5 pts from affected dimension
+- MEDIUM   → −1.5 pts from affected dimension
+- LOW      → −1.0 pt from affected dimension
+
+Automatic PASS triggers (regardless of composite score):
+- RF-01: Going concern audit opinion — enforced by Python in apply_scoring_adjustments()
+- RF-22 is a STRONG PASS signal but NOT automatic — system prompt says "Recommend PASS
+  unless extraordinary circumstances"; do not treat it as a hard override
+
+### RF → Dimension Mapping
+| RF | Name | Dimension | Sev | Deduction |
+|---|---|---|---|---|
+| RF-01 | Going Concern | Financial Health | CRITICAL | AUTO PASS |
+| RF-02 | Customer Concentration | Business Model | HIGH | −2.5 |
+| RF-03 | Revenue Quality | Financial Health | HIGH | −2.5 |
+| RF-04 | Insider Liquidity Grab | Mgmt & Governance | HIGH | −2.5 |
+| RF-05 | Runway Risk | Financial Health | HIGH | −2.5 |
+| RF-06 | Governance Risk | Mgmt & Governance | HIGH | −2.5 |
+| RF-07 | Valuation Disconnect | Valuation | HIGH | −2.5 |
+| RF-08 | Management Red Flags | Mgmt & Governance | HIGH | −2.5 |
+| RF-09 | Related Party Risk | Mgmt & Governance | MEDIUM | −1.5 |
+| RF-10 | Audit Issues | Financial Health | HIGH | −2.5 |
+| RF-11 | Margin Risk | Financial Health | HIGH | −2.5 |
+| RF-12 | Regulatory Overhang | Business Model | HIGH | −2.5 |
+| RF-13 | Market Timing Risk | Market Position | MEDIUM | −1.5 |
+| RF-14 | Capital Structure Risk | Financial Health | HIGH | −2.5 |
+| RF-15 | Product Concentration | Business Model | MEDIUM | −1.5 |
+| RF-16 | Geographic Concentration | Market Position | MEDIUM | −1.5 |
+| RF-17 | Technology Obsolescence | Business Model | HIGH | −2.5 |
+| RF-18 | Working Capital Stress | Financial Health | MEDIUM | −1.5 |
+| RF-19 | Proceeds Quality | Mgmt & Governance | HIGH | −2.5 |
+| RF-20 | Syndicate Spread Risk | Python post-hoc | HIGH | −1.5/excess, cap −5 |
+| RF-21 | PE/Sponsor Overhang | Mgmt & Governance | MEDIUM | −1.5 |
+| RF-22 | Small Firm Suitability | (strong PASS) | HIGH | N/A |
+| RF-23 | Insider Liquidity Overhang | Mgmt & Governance | MEDIUM | −1.5 |
+| RF-24 | Auditor Quality Risk | Financial Health | MEDIUM | −1.5 |
+| RF-25 | Accounting Quality Risk | Financial Health + BMQ | HIGH | −2.5 each |
+
+Note: RF-20 is NOT a dimension-level deduction — it is applied post-hoc by
+apply_scoring_adjustments() directly to weighted_total, not to any dimension score.
+
+### Scoring Floor Rule
+If 3+ HIGH or CRITICAL flags trigger, weighted_total must be ≤55 (PASS) unless both
+Business Model Quality and Market Position score ≥8.5. A great product in a broken
+deal structure is still a PASS.
 
 ## MEMO SECTION ORDER (renderMemo + exportPDF)
 
