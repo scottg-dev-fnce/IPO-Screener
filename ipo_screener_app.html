@@ -1352,11 +1352,11 @@ function renderMemo(m) {
 
   // Dimension bars
   const dims = [
-    { label: "Business Model Quality",    val: scores.business_model_quality,     w: 25 },
-    { label: "Financial Health & Runway", val: scores.financial_health_runway,     w: 25 },
-    { label: "Market & Competition",      val: scores.market_competitive_position, w: 20 },
-    { label: "Management & Governance",   val: scores.management_governance,       w: 15 },
-    { label: "Valuation",                 val: scores.valuation_attractiveness,    w: 15 }
+    { label: "Business Model Quality",         val: scores.business_model_quality,     w: 25 },
+    { label: "Financial Health & Runway",      val: scores.financial_health_runway,    w: 15 },
+    { label: "Market & Competitive Position",  val: scores.market_competitive_position,w: 20 },
+    { label: "Management & Governance",        val: scores.management_governance,      w: 20 },
+    { label: "Valuation Attractiveness",       val: scores.valuation_attractiveness,   w: 20 }
   ];
   const dimBars = dims.map(d => {
     const v   = d.val;
@@ -1371,25 +1371,44 @@ function renderMemo(m) {
 
   // Financial snapshot table
   const finRows = [
-    ["Revenue (Y-2)",     fmtM(fin.revenue_usd_millions?.year_minus_2)],
-    ["Revenue (Y-1)",     fmtM(fin.revenue_usd_millions?.year_minus_1)],
-    ["Revenue (TTM)",     fmtM(fin.revenue_usd_millions?.ttm)],
-    ["YoY Growth",        fin.revenue_growth_yoy_pct   != null ? `${fin.revenue_growth_yoy_pct}%` : "—"],
-    ["Gross Margin",      fin.gross_margin_pct          != null ? `${fin.gross_margin_pct}%` : "—"],
-    ["EBITDA",            fmtM(fin.ebitda_usd_millions)],
-    ["Net Income/Loss",   fmtM(fin.net_income_usd_millions)],
-    ["Cash Burn (Qtrly)", fmtM(fin.cash_burn_quarterly_usd_millions)],
-    ["Cash on Hand",      fmtM(fin.cash_on_hand_pre_ipo_usd_millions)],
-    ["Post-IPO Runway",   fin.estimated_runway_months_post_ipo != null ? `${fin.estimated_runway_months_post_ipo} months` : "—"],
-    ["Total Debt",        fmtM(fin.total_debt_usd_millions)],
-    ["SBC % Revenue",     fin.stock_based_comp_pct_revenue != null ? `${fin.stock_based_comp_pct_revenue}%` : "—"],
-    ["Rule of 40",        fin.rule_of_40_score != null ? `${fin.rule_of_40_score}` : "—"],
-    ["NRR",               fin.nrr_pct != null ? `${fin.nrr_pct}%` : "—"],
+    ["Revenue (Y-2)",         fmtM(fin.revenue_usd_millions?.year_minus_2)],
+    ["Revenue (Y-1)",         fmtM(fin.revenue_usd_millions?.year_minus_1)],
+    ["Revenue (TTM)",         fmtM(fin.revenue_usd_millions?.ttm)],
+    ["YoY Growth",            fin.revenue_growth_yoy_pct   != null ? `${fin.revenue_growth_yoy_pct}%` : "—"],
+    ["Gross Margin",          fin.gross_margin_pct          != null ? `${fin.gross_margin_pct}%` : "—"],
+    ["Gross Margin Trend",    fin.gross_margin_trend        || "—"],
+    ["EBITDA",                fmtM(fin.ebitda_usd_millions)],
+    ["Net Income/Loss",       fmtM(fin.net_income_usd_millions)],
+    ["Cash Burn (Qtrly)",     fmtM(fin.cash_burn_quarterly_usd_millions)],
+    ["Cash on Hand",          fmtM(fin.cash_on_hand_pre_ipo_usd_millions)],
+    ["Post-IPO Runway",       fin.estimated_runway_months_post_ipo != null ? `${fin.estimated_runway_months_post_ipo} months` : "—"],
+    ["Total Debt",            fmtM(fin.total_debt_usd_millions)],
+    ["Debt Maturity",         fin.debt_maturity_schedule    || "—"],
+    ["Covenant Risk",         fin.covenant_risk             || "—"],
+    ["Off-Balance-Sheet",     fin.off_balance_sheet_obligations || "—"],
+    ["SBC % Revenue",         fin.stock_based_comp_pct_revenue != null ? `${fin.stock_based_comp_pct_revenue}%` : "—"],
+    ["Rule of 40",            fin.rule_of_40_score != null ? `${fin.rule_of_40_score}` : "—"],
+    ["NRR",                   fin.nrr_pct != null ? `${fin.nrr_pct}%` : "—"],
+    ["CAC/LTV",               fin.cac_ltv_ratio != null ? `${fin.cac_ltv_ratio}` : "—"],
+    ["Deferred Rev Trend",    fin.deferred_revenue_trend    || "—"],
+    ["A/R vs Rev Growth",     fin.ar_vs_revenue_growth_flag ? `<span style="color:var(--amber);font-weight:600">⚠ A/R growing faster than revenue</span>` : "No divergence flagged"],
   ];
+  const segs = (fin.segments || []).filter(s => s.segment_name);
+  const segTable = segs.length >= 2 ? `
+    <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:16px 0 6px">Segment Breakdown</p>
+    <table class="comp-table">
+      <thead><tr><th>Segment</th><th style="text-align:right">Revenue</th><th style="text-align:right">Gross Margin</th><th style="text-align:right">FCF</th></tr></thead>
+      <tbody>${segs.map(s => `<tr>
+        <td style="color:var(--text)">${s.segment_name}</td>
+        <td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmtM(s.revenue_usd_millions)}</td>
+        <td style="text-align:right">${s.gross_margin_pct != null ? s.gross_margin_pct.toFixed(1)+"%" : "—"}</td>
+        <td style="text-align:right">${fmtM(s.fcf_usd_millions)}</td>
+      </tr>`).join("")}</tbody>
+    </table>` : "";
   const finTable = `<table class="fin-table">
     <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
     <tbody>${finRows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
-  </table>`;
+  </table>${segTable}`;
 
   // Valuation section — live comps + Damodaran benchmarks
   const liveCompsData = val.live_comps_data || [];
@@ -1428,13 +1447,38 @@ function renderMemo(m) {
         <a href="https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/psdata.html" target="_blank" style="color:var(--text-dim)">EV/Sales</a>
       </div>
     </div>` : "";
+  const sotp = val.sotp_valuation || {};
+  const sotpSegs = (sotp.segments || []).filter(s => s.name && s.implied_value_usd_millions != null);
+  const sotpTable = sotpSegs.length > 0 ? `
+    <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:16px 0 6px">Sum-of-the-Parts Valuation</p>
+    <table class="comp-table">
+      <thead><tr><th>Segment</th><th>Methodology</th><th style="text-align:right">Implied Value</th></tr></thead>
+      <tbody>
+        ${sotpSegs.map(s => `<tr>
+          <td style="color:var(--text)">${s.name}</td>
+          <td style="color:var(--text-mid)">${s.methodology || "—"}</td>
+          <td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmtM(s.implied_value_usd_millions)}</td>
+        </tr>`).join("")}
+        <tr style="border-top:1px solid var(--border);font-weight:600">
+          <td colspan="2" style="color:var(--text)">SOTP Total</td>
+          <td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmtM(sotp.sotp_total_usd_millions)}</td>
+        </tr>
+        ${sotp.sotp_vs_offering_price_delta_pct != null ? `<tr>
+          <td colspan="2" style="color:var(--text-dim)">vs. Offering Price</td>
+          <td style="text-align:right;color:${sotp.sotp_vs_offering_price_delta_pct >= 0 ? "var(--green)" : "var(--red)"}">
+            ${sotp.sotp_vs_offering_price_delta_pct > 0 ? "+" : ""}${sotp.sotp_vs_offering_price_delta_pct.toFixed(1)}%
+          </td>
+        </tr>` : ""}
+      </tbody>
+    </table>` : "";
   const valSection = `<div class="memo-section">
     <h3><span class="section-num">09</span> Valuation Analysis ${liveFlag}${damFlag}</h3>
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
       <tbody>
         <tr><td>Implied EV</td><td class="val-col">${fmtM(val.implied_ev_usd_millions)}</td></tr>
-        <tr><td>EV / Revenue</td><td class="val-col">${val.ev_revenue_multiple != null ? val.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>EV / Revenue</td><td class="val-col" style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.ev_revenue_multiple != null ? val.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>EV / EBITDA</td><td class="val-col">${val.ev_ebitda_multiple != null ? val.ev_ebitda_multiple.toFixed(1)+"x" : "<span style='color:var(--text-dim)'>N/A (neg. EBITDA)</span>"}</td></tr>
         <tr><td>Sector Median EV/Rev${val.sector_median_source === "live_market_data" ? " (live)" : val.sector_median_source === "damodaran" ? " (Damodaran)" : ""}</td><td class="val-col">${val.sector_median_ev_revenue != null ? val.sector_median_ev_revenue.toFixed(1)+"x" : "—"}</td></tr>
         <tr><td>Premium to Sector</td><td class="val-col" style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.premium_to_sector_median_pct != null ? val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
         <tr><td>Public Comps</td><td class="val-col">${(val.public_comps || []).join(", ") || "—"}</td></tr>
@@ -1442,6 +1486,7 @@ function renderMemo(m) {
       </tbody>
     </table>
     ${liveCompsTable}
+    ${sotpTable}
     ${damBench}
   </div>`;
 
@@ -1543,10 +1588,23 @@ function renderMemo(m) {
   // Strip leading numbering Claude may have prepended (e.g. "1. ", "1) ")
   const stripLeadingNum = s => String(s).replace(/^\s*\d+[.):\-]\s*/, "");
 
-  // Conditions / pass reasons
-  const condHtml = m.recommendation === "CONDITIONAL" && (m.conditions || []).length > 0
+  // Section 03 — reasons / conditions / pass reasons (all three recommendation types)
+  const uwHtml = m.recommendation === "UNDERWRITE" && (m.underwrite_reasons || []).length > 0
+    ? `<div class="memo-section">
+        <h3><span class="section-num">03</span> Reasons for Underwrite</h3>
+        <div class="conditions-list">${m.underwrite_reasons.map(c =>
+          `<div class="condition-item" style="background:rgba(30,180,100,.06);border-color:rgba(30,180,100,.25)">
+            <span class="condition-text">${stripLeadingNum(c)}</span>
+          </div>`
+        ).join("")}</div>
+      </div>` : "";
+  // CONDITIONAL: section 03 shows summary; standalone detailed conditions block follows
+  const condSummaryHtml = m.recommendation === "CONDITIONAL" && (m.conditions || []).length > 0
     ? `<div class="memo-section">
         <h3><span class="section-num">03</span> Conditions for Underwriting</h3>
+        <p class="memo-prose" style="color:var(--amber);margin-bottom:10px">
+          ${m.conditions.length} condition${m.conditions.length > 1 ? "s" : ""} must be satisfied before this deal can be presented to the deal committee. See detailed requirements below.
+        </p>
         <div class="conditions-list">${m.conditions.map(c =>
           `<div class="condition-item"><span class="condition-text">${stripLeadingNum(c)}</span></div>`
         ).join("")}</div>
@@ -1560,6 +1618,7 @@ function renderMemo(m) {
           </div>`
         ).join("")}</div>
       </div>` : "";
+  const condHtml = uwHtml || condSummaryHtml || passHtml;
 
   // Score adjustments note (RF-20 penalty etc.)
   const adjNote = (scores.adjustments || []).length > 0
@@ -1651,7 +1710,7 @@ function renderMemo(m) {
         <div class="committee-block">${m.deal_committee_narrative || "Not available."}</div>
       </div>
 
-      ${condHtml}${passHtml}
+      ${condHtml}
 
       <div class="memo-section">
         <h3><span class="section-num">04</span> Risk &amp; Red Flags</h3>
@@ -1681,15 +1740,28 @@ function renderMemo(m) {
 
       ${buildSection14(m)}
 
+      ${buildSectionSourceVerification(m)}
+      ${buildSectionManagement(m)}
+
       ${m.macro_sector_context ? `<div class="memo-section">
-        <h3><span class="section-num">11</span> Macro &amp; Sector Context</h3>
+        <h3><span class="section-num">13</span> Macro &amp; Sector Context</h3>
         <p class="memo-prose">${m.macro_sector_context}</p>
       </div>` : ""}
 
-      ${(m.lead_underwriters || []).length > 0 ? `<div class="memo-section">
-        <h3><span class="section-num">12</span> Underwriting Syndicate</h3>
-        <p class="memo-prose">${m.lead_underwriters.join(" · ")} &nbsp;—&nbsp; ${m.underwriter_tier || ""} &nbsp;·&nbsp; ${m.ipo_type || ""}</p>
-      </div>` : ""}
+      ${(m.lead_underwriters || []).length > 0 ? (() => {
+        const sa = m.syndicate_assessment || {};
+        const spreadBanner = sa.spread_risk_flag
+          ? `<div class="rf-banner rf-banner-amber" style="margin-top:10px">&#x2691; SYNDICATE SPREAD RISK — ${sa.spread_risk_reason || "Excessive number of underwriters for deal size."}</div>`
+          : "";
+        const uwCount = sa.underwriter_count != null
+          ? `<p style="font-size:11px;color:var(--text-dim);margin-top:8px">Total underwriters named: <strong style="color:var(--text)">${sa.underwriter_count}</strong></p>`
+          : "";
+        return `<div class="memo-section">
+          <h3><span class="section-num">14</span> Underwriting Syndicate</h3>
+          <p class="memo-prose">${m.lead_underwriters.join(" · ")} &nbsp;—&nbsp; ${m.underwriter_tier || ""} &nbsp;·&nbsp; ${m.ipo_type || ""}</p>
+          ${uwCount}${spreadBanner}
+        </div>`;
+      })() : ""}
 
       ${buildSection11(m)}
       ${buildSection10(m)}
@@ -1710,8 +1782,73 @@ function renderMemo(m) {
 }
 
 // ─────────────────────────────────────────────────────────
-// MEMO SECTION BUILDERS (10-15)
+// MEMO SECTION BUILDERS
 // ─────────────────────────────────────────────────────────
+
+function buildSectionSourceVerification(m) {
+  const sv = m.source_verification;
+  if (!sv) return "";
+  const t1 = (sv.tier_1_sources || []).filter(Boolean);
+  const t2 = (sv.tier_2_sources || []).filter(Boolean);
+  const t3 = (sv.tier_3_sources || []).filter(Boolean);
+  if (t1.length + t2.length + t3.length === 0) return "";
+  const renderTier = (label, color, items) => items.length > 0 ? `
+    <tr style="border-top:1px solid var(--border)">
+      <td style="padding-top:10px;font-size:11px;font-weight:700;color:${color};letter-spacing:.06em;text-transform:uppercase;vertical-align:top">${label}</td>
+      <td style="padding-top:10px;font-size:12px;color:var(--text-mid);line-height:1.7">${items.map(s => escAttr(s)).join("<br>")}</td>
+    </tr>` : "";
+  return `<div class="memo-section">
+    <h3><span class="section-num">11</span> Source Verification</h3>
+    <table class="fin-table">
+      <thead><tr><th>Tier</th><th>Sources Cited</th></tr></thead>
+      <tbody>
+        ${renderTier("Tier 1 — Major Financial Press", "var(--green)", t1)}
+        ${renderTier("Tier 2 — Industry Research", "var(--accent)", t2)}
+        ${renderTier("Tier 3 — Corroborating / Secondary", "var(--text-dim)", t3)}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function buildSectionManagement(m) {
+  const mg = m.management;
+  if (!mg) return "";
+  const hasCeo = mg.ceo_name || mg.ceo_tenure_months != null;
+  const hasCfo = mg.cfo_name || mg.cfo_tenure_months != null;
+  const hasBoard = mg.board_independent_pct != null;
+  const flags = (mg.management_flags || []).filter(Boolean);
+  if (!hasCeo && !hasCfo && !hasBoard && flags.length === 0) return "";
+  const tenureFmt = (mo) => {
+    if (mo == null) return "&mdash;";
+    const cls = mo < 12 ? "style='color:var(--amber);font-weight:600'" : "";
+    return `<span ${cls}>${mo} months${mo < 12 ? " ⚠" : ""}</span>`;
+  };
+  const boardPctFmt = (pct) => {
+    if (pct == null) return "&mdash;";
+    const cls = pct < 50 ? "style='color:var(--amber);font-weight:600'" : "";
+    return `<span ${cls}>${pct}%${pct < 50 ? " ⚠" : ""}</span>`;
+  };
+  const rows = [
+    hasCeo ? `<tr><td class="label-col">CEO</td><td class="val-col">${mg.ceo_name || "&mdash;"}</td></tr>` : "",
+    hasCeo ? `<tr><td class="label-col">CEO Tenure</td><td class="val-col">${tenureFmt(mg.ceo_tenure_months)}</td></tr>` : "",
+    hasCfo ? `<tr><td class="label-col">CFO</td><td class="val-col">${mg.cfo_name || "&mdash;"}</td></tr>` : "",
+    hasCfo ? `<tr><td class="label-col">CFO Tenure</td><td class="val-col">${tenureFmt(mg.cfo_tenure_months)}</td></tr>` : "",
+    hasBoard ? `<tr><td class="label-col">Board Independence</td><td class="val-col">${boardPctFmt(mg.board_independent_pct)}</td></tr>` : "",
+  ].filter(Boolean).join("");
+  const flagBlock = flags.length > 0
+    ? `<div class="flag-list" style="margin-top:10px">${flags.map(f =>
+        `<div class="flag-entry"><span class="flag-code">MGT</span><span class="flag-text">${escAttr(String(f))}</span></div>`
+      ).join("")}</div>` : "";
+  return `<div class="memo-section">
+    <h3><span class="section-num">12</span> Management &amp; Board</h3>
+    <table class="fin-table">
+      <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${flagBlock}
+  </div>`;
+}
+
 function buildSection10(m) {
   const la = m.lockup_analysis || {};
   if (!la.lockup_days && la.primary_shares_millions == null && la.secondary_shares_millions == null) return "";
@@ -1728,7 +1865,7 @@ function buildSection10(m) {
     ["Secondary % of Offering",   la.secondary_shares_pct_offering != null ? `${la.secondary_shares_pct_offering.toFixed(1)}%` : "&mdash;"],
   ];
   return `<div class="memo-section">
-    <h3><span class="section-num">14</span> Lockup &amp; Insider Selling</h3>
+    <h3><span class="section-num">15</span> Lockup &amp; Insider Selling</h3>
     ${rf23}
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
@@ -1747,7 +1884,7 @@ function buildSection11(m) {
     ? `<div class="rf-banner rf-banner-amber">&#x2691; RF-20 UPGRADE &mdash; ${sq.rf20_tier3_reason || "Tier 3 lead bookrunner on a deal >$100M."}</div>`
     : "";
   return `<div class="memo-section">
-    <h3><span class="section-num">13</span> Syndicate Quality</h3>
+    <h3><span class="section-num">16</span> Syndicate Quality</h3>
     ${rf20}
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
@@ -1797,7 +1934,7 @@ function buildSection12(m) {
     : `<p style="font-size:12px;color:var(--text-dim);margin-top:4px">No comparable IPO data available.</p>`;
 
   return `<div class="memo-section">
-    <h3><span class="section-num">15</span> Comparable IPO Performance</h3>
+    <h3><span class="section-num">17</span> Comparable IPO Performance</h3>
     ${body}
   </div>`;
 }
@@ -1814,7 +1951,7 @@ function buildSection13(m) {
     ? `<div class="rf-banner rf-banner-red">&#x2691; RF-24 AUDITOR QUALITY RISK &mdash; ${aa.rf24_reason || "Non-Big 4 / non-recognized mid-tier auditor on a deal >$50M."}</div>`
     : "";
   return `<div class="memo-section">
-    <h3><span class="section-num">16</span> Auditor Quality</h3>
+    <h3><span class="section-num">18</span> Auditor Quality</h3>
     ${rf24}
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
@@ -1855,7 +1992,8 @@ function buildSection14(m) {
 
 function buildSection15(m) {
   const lr = m.litigation_regulatory || {};
-  if (!lr.litigation_risk_level && !lr.litigation_summary) return "";
+  const rpFlags = (m.related_party_flags || []).filter(Boolean);
+  if (!lr.litigation_risk_level && !lr.litigation_summary && rpFlags.length === 0) return "";
   const risk = (lr.litigation_risk_level || "none").toLowerCase();
   const riskCls = risk === "none" ? "litig-none" : risk === "low" ? "litig-low" : risk === "medium" ? "litig-medium" : risk === "high" ? "litig-high" : "litig-critical";
   const bools = [
@@ -1864,9 +2002,15 @@ function buildSection15(m) {
     ["Material Class Action Lawsuits",          lr.class_action_suits],
     ["Other Material Regulatory Proceedings",   lr.material_regulatory_proceedings],
   ];
+  const rpBlock = rpFlags.length > 0 ? `
+    <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:16px 0 8px">Related Party Transactions</p>
+    <div class="flag-list">${rpFlags.map(f => {
+      const txt = typeof f === "string" ? f : (f.description || f.narrative || JSON.stringify(f));
+      return `<div class="flag-entry"><span class="flag-code">RPT</span><span class="flag-text">${escAttr(txt)}</span></div>`;
+    }).join("")}</div>` : "";
   return `<div class="memo-section">
-    <h3><span class="section-num">05</span> Litigation &amp; Regulatory Exposure</h3>
-    ${lr.litigation_risk_level ? `<p style="margin-bottom:14px">Risk Level: <span class="litig-badge ${riskCls}">${lr.litigation_risk_level}</span></p>` : ""}
+    <h3><span class="section-num">05</span> Litigation, Regulatory &amp; Related Party Exposure</h3>
+    ${lr.litigation_risk_level ? `<p style="margin-bottom:14px">Litigation Risk Level: <span class="litig-badge ${riskCls}">${lr.litigation_risk_level}</span></p>` : ""}
     <div style="margin-bottom:14px">
       ${bools.map(r => `<div class="bool-row">
         <span class="${r[1] ? "bool-icon-yes" : "bool-icon-no"}">${r[1] ? "&#x2691;" : "&#x2713;"}</span>
@@ -1875,6 +2019,7 @@ function buildSection15(m) {
       </div>`).join("")}
     </div>
     ${lr.litigation_summary ? `<p style="font-size:12px;color:var(--text-mid);line-height:1.7;font-family:'Libre Baskerville',serif">${lr.litigation_summary}</p>` : ""}
+    ${rpBlock}
   </div>`;
 }
 
@@ -1955,7 +2100,7 @@ function buildSection16(m) {
     : `<tr><td colspan="2" style="color:var(--text-dim);font-style:italic;padding:12px 10px">No accounting items available.</td></tr>`;
 
   return `<div class="memo-section">
-    <h3><span class="section-num">17</span> Accounting Practices</h3>
+    <h3><span class="section-num">19</span> Accounting Practices</h3>
     ${rf25Banner}
     ${scoreBlock}
     ${preRevenueNote}
@@ -2028,7 +2173,7 @@ function buildSection17(m) {
   };
 
   return `<div class="memo-section">
-    <h3><span class="section-num">18</span> ESG Disclosure Score</h3>
+    <h3><span class="section-num">20</span> ESG Disclosure Score</h3>
     ${compositeBlock}
     <div class="esg-pillars">
       ${pillarCard("E", "Environmental", "30%", E)}
@@ -2105,8 +2250,8 @@ function exportPDF() {
     { secNum: "01", part: "Part I",   title: "Recommendation"                },
     { secNum: "04", part: "Part II",  title: "Risk Assessment"               },
     { secNum: "06", part: "Part III", title: "Business & Financial Analysis"  },
-    { secNum: "12", part: "Part IV",  title: "Deal Structure & Diligence"    },
-    { secNum: "18", part: "Part V",   title: "ESG"                           },
+    { secNum: "14", part: "Part IV",  title: "Deal Structure & Diligence"    },
+    { secNum: "20", part: "Part V",   title: "ESG"                           },
   ];
 
   for (const pd of partDefs) {

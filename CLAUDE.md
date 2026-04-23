@@ -84,22 +84,24 @@ and renders them in a browser-based app with PDF export.
 
 01 Executive Summary
 02 Deal Committee Recommendation
-03 Reasons for Underwrite/Pass/Conditional
+03 Reasons for Underwrite / Conditions for Underwriting / Reasons for Pass
 04 Risk & Red Flags
-05 Litigation & Regulatory Exposure
+05 Litigation, Regulatory & Related Party Exposure
 06 Business Overview
-07 Financial Snapshot
+07 Financial Snapshot (+ Segment Breakdown if 2+ segments)
 08 Use of Proceeds
-09 Valuation Analysis (Damodaran benchmarks embedded at bottom)
+09 Valuation Analysis (+ SOTP if 2+ segments; Damodaran benchmarks at bottom)
 10 Revenue Quality
-11 Macro & Sector Context
-12 Underwriting Syndicate
-13 Syndicate Quality
-14 Lockup & Insider Selling
-15 Comparable IPO Performance
-16 Auditor Quality
-17 Accounting Practices
-18 ESG Disclosure Score
+11 Source Verification
+12 Management & Board
+13 Macro & Sector Context
+14 Underwriting Syndicate
+15 Lockup & Insider Selling
+16 Syndicate Quality
+17 Comparable IPO Performance
+18 Auditor Quality
+19 Accounting Practices
+20 ESG Disclosure Score
 
 ## PDF EXPORT RULES
 
@@ -107,8 +109,8 @@ and renders them in a browser-based app with PDF export.
 - PART I — RECOMMENDATION: before section 01
 - PART II — RISK ASSESSMENT: before section 04
 - PART III — BUSINESS & FINANCIAL ANALYSIS: before section 06
-- PART IV — DEAL STRUCTURE & DILIGENCE: before section 12
-- PART V — ESG: before section 18
+- PART IV — DEAL STRUCTURE & DILIGENCE: before section 14
+- PART V — ESG: before section 20
 - Format: thick 3px gold rule + part title in small caps, single line,
   no page break
 
@@ -122,7 +124,7 @@ and renders them in a browser-based app with PDF export.
 - Suppress narrative paragraph after flag list in PDF
 - Keep full display in browser view unchanged
 
-### Section 17 Accounting Practices (PDF only)
+### Section 19 Accounting Practices (PDF only)
 - Show ONLY items rated Aggressive or Highly Aggressive
 - If all items are Standard/Conservative, show single line:
   "All accounting dimensions rated Standard or Conservative —
@@ -138,7 +140,7 @@ and renders them in a browser-based app with PDF export.
 - Score gauge + dimension breakdown
 - Amendment banner if applicable
 
-## ESG DISCLOSURE SCORE (Section 18)
+## ESG DISCLOSURE SCORE (Section 20)
 - Modeled on Bloomberg ESG Disclosure Score methodology
 - Score: 0-100 composite
 - Pillars: Environmental (30%), Social (35%), Governance (35%)
@@ -149,31 +151,33 @@ and renders them in a browser-based app with PDF export.
   composite_score, disclosure_narrative
 
 ## RED FLAG CODES REFERENCE
-RF-01: Going concern opinion (AUTO PASS)
-RF-02: Customer concentration >50%
-RF-03: Insider selling >20% of offering
-RF-04: Lockup <90 days
-RF-05: Runway <12 months post-IPO
-RF-06: Revenue decline YoY
-RF-07: Gross margin <20%
-RF-08: SBC >25% of revenue
-RF-09: Related party transactions
-RF-10: Pending material litigation
-RF-11: Regulatory/compliance risk
-RF-12: Single product concentration
-RF-13: Geographic concentration
-RF-14: Key person dependency
-RF-15: Product concentration
-RF-16: Technology obsolescence risk
-RF-17: Acquisition integration risk
-RF-18: Working capital stress
-RF-19: Proceeds to non-operational uses >30%
-RF-20: Tier 3 sole underwriter
-RF-21: Dual-class share structure
-RF-22: Sub-$50M offering / sub-$10M revenue (AUTO PASS)
-RF-23: Lockup <180 days
-RF-24: Non-Big 4 auditor with material weakness
-RF-25: Accounting quality score ≤5
+These definitions MUST match the system prompt Red Flag Inference Engine exactly.
+
+RF-01: GOING CONCERN — Auditor doubt re: ability to continue as going concern. AUTOMATIC PASS.
+RF-02: CUSTOMER CONCENTRATION — Top 3 customers >40% revenue, or top 1 customer >20% revenue.
+RF-03: REVENUE QUALITY — A/R growing >1.5× faster than revenue; deferred revenue declining despite revenue growth; aggressive non-GAAP adjustments without justification.
+RF-04: INSIDER LIQUIDITY GRAB — Secondary shares >30% of offering; founders/sponsors cashing out while company runs losses.
+RF-05: RUNWAY RISK — Post-IPO cash runway <18 months at current burn rate.
+RF-06: GOVERNANCE RISK — Dual-class with founder voting >70% post-IPO; no independent board majority; classified board.
+RF-07: VALUATION DISCONNECT — Priced >2× sector median EV/Revenue with no superior growth or margin justification.
+RF-08: MANAGEMENT RED FLAGS — CEO or CFO tenure <12 months; prior failures or SEC enforcement; key-man concentration without succession.
+RF-09: RELATED PARTY RISK — Material revenue from affiliates, loans to executives, above-market IP licensing from insiders.
+RF-10: AUDIT ISSUES — Auditor change <24 months without disclosed reason; material weakness in internal controls; non-Big 4 for >$100M revenue company.
+RF-11: MARGIN RISK — Gross margin <0% or <20% with no articulated path to improvement; declining margins with increasing scale (inverted unit economics).
+RF-12: REGULATORY OVERHANG — Active SEC investigation; DOJ inquiry; material litigation >$50M exposure; adverse imminent regulation.
+RF-13: MARKET TIMING RISK — Filing in sector with recent failed IPOs trading significantly below issue price; late-cycle sector.
+RF-14: CAPITAL STRUCTURE RISK — PIK debt, high-yield debt with aggressive covenants, or convertible notes with potential dilution >15% of post-IPO shares; Debt/EBITDA >5×.
+RF-15: PRODUCT CONCENTRATION — >60% of revenue from a single product/service with no clear diversification roadmap.
+RF-16: GEOGRAPHIC CONCENTRATION — >60% revenue from a single geography with no articulated expansion plan.
+RF-17: TECHNOLOGY OBSOLESCENCE — Core technology has known near-term substitutes (AI disruption, open-source, platform consolidation).
+RF-18: WORKING CAPITAL STRESS — Negative working capital or current ratio <1.0 suggesting near-term liquidity issues.
+RF-19: PROCEEDS QUALITY — >30% of gross IPO proceeds to debt repayment, sponsor distributions, or existing shareholder liquidity rather than company operations.
+RF-20: SYNDICATE SPREAD RISK — More than 4 lead/co-manager underwriters on a deal below $500M. Signals difficulty placing the book.
+RF-21: PE / SPONSOR OVERHANG — PE/sponsor ownership >40% post-IPO with lockup ≤180 days; predictable secondary selling pressure.
+RF-22: SMALL FIRM SUITABILITY — Offering size <$50M, or TTM revenue <$10M, or pre-revenue stage. Recommend PASS.
+RF-23: INSIDER LIQUIDITY OVERHANG — Secondary shares exceed 20% of total offering.
+RF-24: AUDITOR QUALITY RISK — Auditor is not Big 4 or recognized mid-tier on a deal with offering size >$50M.
+RF-25: ACCOUNTING QUALITY RISK — Overall Accounting Quality Score ≤5. Multiple aggressive accounting policy choices.
 
 ## DAMODARAN INTEGRATION
 - Source: NYU Stern Damodaran January 2026 data

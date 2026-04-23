@@ -111,6 +111,14 @@ Analyze the following from the filing text provided:
       an underwriting decision.
     - If all material risks are already fully covered by triggered flag codes, briefly
       note that no additional risks were identified beyond those flagged.
+    - SOURCE ATTRIBUTION REQUIREMENT: Every red flag description and every statement in
+      key_risk_narrative that references a factual claim (financial metric, legal proceeding,
+      audit finding, regulatory action) MUST attribute its evidence to a named source with a
+      date where available. Format: "Per [Source, Date]: [fact]." Acceptable sources include
+      the S-1 itself (cite section name), named analysts, named financial publications (WSJ,
+      Bloomberg, Reuters, FT), or named research firms (PitchBook, Damodaran, etc.). Do NOT
+      write general statements like "it is known that" or "the company has stated" without
+      citing the specific S-1 section or external source.
 
 [D] MD&A -- FINANCIAL NARRATIVE
     - Revenue last 3 years (or since inception)
@@ -124,6 +132,10 @@ Analyze the following from the filing text provided:
     - Rule of 40 score if calculable (revenue growth % + EBITDA margin %)
     - CAC / LTV if disclosed (SaaS/subscription businesses)
     - Net Revenue Retention (NRR) or Dollar-Based Net Expansion Rate
+    - SEGMENT DISCLOSURE: If the S-1 discloses two or more operating segments, extract
+      segment-level revenue, gross margin %, and free cash flow separately for each named
+      segment — do NOT report consolidated figures only. Populate the `segments[]` array
+      in the JSON schema. If no segment disclosure exists, leave segments[] empty.
 
 [E] FINANCIAL STATEMENTS
     - Balance sheet: total assets, total liabilities, equity
@@ -344,6 +356,40 @@ Analyze the following from the filing text provided:
     - Populate disclosure_narrative with 2–3 sentences summarizing overall ESG disclosure
       posture, any sector-relevant calibration notes, and the most important gap.
 
+[V] VALUATION
+    - Compute implied enterprise value at the MIDPOINT of the proposed offering price range:
+        Implied EV = (midpoint price × fully-diluted shares outstanding) + total debt − cash
+      If price range is not yet set, use any disclosed valuation guidance or the last private
+      round valuation. Document your assumption in the valuation_flag reasoning.
+    - Select 3–5 public comparable companies by SIC code and business model. For each comp:
+        • Name and ticker
+        • LTM revenue (USD millions)
+        • EBITDA or Adj. EBITDA margin (%)
+        • EV/Revenue multiple (live or most recently reported)
+        • EV/EBITDA multiple where positive EBITDA exists
+      Populate `public_comps` with ticker strings for yfinance enrichment.
+    - Calculate for the subject company:
+        • EV/Revenue = implied_ev / TTM_revenue
+        • EV/EBITDA = implied_ev / TTM_EBITDA (set to null if EBITDA is negative)
+    - Compute sector median EV/Revenue and EV/EBITDA from your comp set.
+    - Calculate premium_to_sector_median_pct = (subject EV/Revenue − median) / median × 100.
+    - Set valuation_flag = true if subject EV/Revenue > 2× sector median, OR if
+      EV/EBITDA > 20× on a GAAP-unprofitable company with no clear path to profitability.
+    - VALUATION MUST ACCOUNT FOR PROFITABILITY: Do NOT use EV/Revenue discount to sector
+      median as a positive signal for a GAAP-loss company. The correct primary metric for
+      unprofitable companies is EV/EBITDA or EV/Adj.EBITDA. A discount is EXPECTED and
+      does not constitute an attractive valuation.
+    - SOURCE VERIFICATION: For every market statistic cited in the valuation narrative
+      (sector multiples, comp company revenues, market share data), identify whether the
+      source is tier_1 (WSJ, Bloomberg, Reuters, FT, NYT), tier_2 (PitchBook, Damodaran,
+      named sector analyst), or tier_3 (blog, secondary press, unattributed commentary).
+      Populate the `source_verification` block accordingly.
+    - SUM-OF-THE-PARTS: If the company has two or more distinct operating segments with
+      separate financial disclosure, attempt a SOTP valuation. For each segment, select the
+      most appropriate methodology (EV/Revenue, EV/EBITDA, or DCF where guidance exists)
+      and compute an implied segment value. Populate `sotp_valuation` with the result.
+      If only one segment or insufficient data, leave sotp_valuation.segments empty.
+
 
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 RED FLAG INFERENCE ENGINE
@@ -526,7 +572,18 @@ Use this exact schema:
     "nrr_pct": null,
     "cac_ltv_ratio": null,
     "ar_vs_revenue_growth_flag": false,
-    "deferred_revenue_trend": ""
+    "deferred_revenue_trend": "",
+    "debt_maturity_schedule": "",
+    "covenant_risk": "",
+    "off_balance_sheet_obligations": "",
+    "segments": [
+      {
+        "segment_name": "",
+        "revenue_usd_millions": null,
+        "gross_margin_pct": null,
+        "fcf_usd_millions": null
+      }
+    ]
   },
 
   "ownership": {
@@ -562,10 +619,22 @@ Use this exact schema:
   "valuation": {
     "implied_ev_usd_millions": null,
     "ev_revenue_multiple": null,
+    "ev_ebitda_multiple": null,
     "sector_median_ev_revenue": null,
     "premium_to_sector_median_pct": null,
     "public_comps": [],
-    "valuation_flag": false
+    "valuation_flag": false,
+    "sotp_valuation": {
+      "segments": [
+        {
+          "name": "",
+          "methodology": "",
+          "implied_value_usd_millions": null
+        }
+      ],
+      "sotp_total_usd_millions": null,
+      "sotp_vs_offering_price_delta_pct": null
+    }
   },
 
   "damodaran_comps": {
@@ -650,6 +719,7 @@ Use this exact schema:
   },
 
   "recommendation": "",
+  "underwrite_reasons": [],
   "conditions": [],
   "pass_reasons": [],
 
@@ -752,6 +822,12 @@ Use this exact schema:
     "composite_score": null,
     "weights": {"e": 0.30, "s": 0.35, "g": 0.35},
     "disclosure_narrative": ""
+  },
+
+  "source_verification": {
+    "tier_1_sources": [],
+    "tier_2_sources": [],
+    "tier_3_sources": []
   },
 
   "is_amendment": false,
