@@ -1598,15 +1598,26 @@ function renderMemo(m) {
           </div>`
         ).join("")}</div>
       </div>` : "";
-  // CONDITIONAL: section 03 shows summary; standalone detailed conditions block follows
-  const condSummaryHtml = m.recommendation === "CONDITIONAL" && (m.conditions || []).length > 0
+  // CONDITIONAL: section 03 = brief summary only; full list renders as a standalone section after 03
+  const condSummaryHtml = m.recommendation === "CONDITIONAL"
     ? `<div class="memo-section">
         <h3><span class="section-num">03</span> Conditions for Underwriting</h3>
-        <p class="memo-prose" style="color:var(--amber);margin-bottom:10px">
-          ${m.conditions.length} condition${m.conditions.length > 1 ? "s" : ""} must be satisfied before this deal can be presented to the deal committee. See detailed requirements below.
+        <p class="memo-prose" style="color:var(--amber)">
+          ${(m.conditions || []).length} condition${(m.conditions || []).length !== 1 ? "s" : ""} must be satisfied before this deal can proceed to the deal committee. See the Conditions for Underwriting section below.
         </p>
-        <div class="conditions-list">${m.conditions.map(c =>
-          `<div class="condition-item"><span class="condition-text">${stripLeadingNum(c)}</span></div>`
+      </div>` : "";
+  // Standalone detailed conditions block — renders only for CONDITIONAL, placed between 03 and 04
+  const condDetailHtml = m.recommendation === "CONDITIONAL" && (m.conditions || []).length > 0
+    ? `<div class="memo-section" style="border-left:3px solid var(--amber);padding-left:16px">
+        <h3 style="color:var(--amber)">Conditions for Underwriting</h3>
+        <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;font-style:italic">
+          All conditions below must be resolved before this deal is presented to the deal committee.
+        </p>
+        <div class="conditions-list">${m.conditions.map((c, i) =>
+          `<div class="condition-item">
+            <span style="font-size:10px;font-weight:700;color:var(--amber);margin-right:8px;min-width:18px;display:inline-block">${i + 1}.</span>
+            <span class="condition-text">${stripLeadingNum(c)}</span>
+          </div>`
         ).join("")}</div>
       </div>` : "";
   const passHtml = m.recommendation === "PASS" && (m.pass_reasons || []).length > 0
@@ -1711,6 +1722,7 @@ function renderMemo(m) {
       </div>
 
       ${condHtml}
+      ${condDetailHtml}
 
       <div class="memo-section">
         <h3><span class="section-num">04</span> Risk &amp; Red Flags</h3>

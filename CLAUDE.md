@@ -84,7 +84,13 @@ and renders them in a browser-based app with PDF export.
 
 01 Executive Summary
 02 Deal Committee Recommendation
-03 Reasons for Underwrite / Conditions for Underwriting / Reasons for Pass
+03 Recommendation Summary — brief one-line statement for all three rec types:
+     UNDERWRITE: enumerated underwrite_reasons[]
+     CONDITIONAL: "X conditions must be satisfied before this deal can proceed" (no list)
+     PASS: enumerated pass_reasons[]
+[03C] Conditions for Underwriting — CONDITIONAL only, no section number badge.
+     Full numbered actionable conditions list. Rendered between 03 and 04.
+     Styled with amber left border to distinguish from numbered sections.
 04 Risk & Red Flags
 05 Litigation, Regulatory & Related Party Exposure
 06 Business Overview
