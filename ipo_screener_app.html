@@ -1327,7 +1327,9 @@ async function selectCompany(date, file, companyName) {
   try {
     const resp = await fetch(`${DATA_BASE}/${date}/${file}`);
     if (!resp.ok) throw new Error("Not found");
-    renderMemo(await resp.json());
+    const data = await resp.json();
+    validateMemo(data);
+    renderMemo(data);
   } catch (e) {
     document.getElementById("memo-panel").innerHTML =
       `<div class="memo-empty"><p>Could not load memo: ${e.message}</p></div>`;
@@ -1370,27 +1372,61 @@ function renderMemo(m) {
   }).join("");
 
   // Financial snapshot table
+  // Resolve revenue fields from multiple possible schema formats
+  const _hist   = fin.revenue_history || [];
+  const _revY2  = fin.revenue_usd_millions?.year_minus_2
+                  || (_hist.length >= 3 ? _hist[0].revenue_usd_millions : null)
+                  || null;
+  const _revY1  = fin.revenue_usd_millions?.year_minus_1
+                  || fin.revenue_prior_year_usd_millions
+                  || (_hist.length >= 2 ? _hist[_hist.length - 2].revenue_usd_millions : null)
+                  || null;
+  const _revTTM = fin.revenue_usd_millions?.ttm
+                  || fin.revenue_ttm_usd_millions
+                  || fin.revenue_usd_millions
+                  || null;
+  // Resolve YoY growth, cash, and EBITDA from both schema versions
+  const _yoyGrowth  = fin.revenue_growth_yoy_pct  ?? fin.revenue_growth_pct;
+  const _cashOnHand = fin.cash_on_hand_pre_ipo_usd_millions ?? fin.cash_usd_millions;
+  const _ebitda     = fin.adjusted_ebitda_usd_millions != null
+                      ? fin.adjusted_ebitda_usd_millions
+                      : fin.ebitda_usd_millions;
+  const _ebitdaLabel = fin.adjusted_ebitda_usd_millions != null ? "Adj. EBITDA" : "EBITDA";
+  // Format debt maturity schedule array → readable string
+  const _debtMatFmt = (() => {
+    const sched = fin.debt_maturity_schedule;
+    if (!sched) return "—";
+    if (typeof sched === "string") return sched;
+    if (Array.isArray(sched) && sched.length > 0) {
+      return sched.map(x =>
+        x.year && x.amount_usd_millions != null
+          ? x.year + ": $" + Number(x.amount_usd_millions).toLocaleString() + "M"
+          : safeRender(x)
+      ).join(" | ");
+    }
+    return safeRender(sched);
+  })();
   const finRows = [
-    ["Revenue (Y-2)",         fmtM(fin.revenue_usd_millions?.year_minus_2)],
-    ["Revenue (Y-1)",         fmtM(fin.revenue_usd_millions?.year_minus_1)],
-    ["Revenue (TTM)",         fmtM(fin.revenue_usd_millions?.ttm)],
-    ["YoY Growth",            fin.revenue_growth_yoy_pct   != null ? `${fin.revenue_growth_yoy_pct}%` : "—"],
+    ["Revenue (Y-2)",         fmtM(_revY2)],
+    ["Revenue (Y-1)",         fmtM(_revY1)],
+    ["Revenue (TTM)",         fmtM(_revTTM)],
+    ["YoY Growth",            _yoyGrowth   != null ? `${_yoyGrowth}%` : "—"],
     ["Gross Margin",          fin.gross_margin_pct          != null ? `${fin.gross_margin_pct}%` : "—"],
-    ["Gross Margin Trend",    fin.gross_margin_trend        || "—"],
-    ["EBITDA",                fmtM(fin.ebitda_usd_millions)],
+    ["Gross Margin Trend",    safeRender(fin.gross_margin_trend, {fallback:"—"})],
+    [_ebitdaLabel,            fmtM(_ebitda)],
     ["Net Income/Loss",       fmtM(fin.net_income_usd_millions)],
     ["Cash Burn (Qtrly)",     fmtM(fin.cash_burn_quarterly_usd_millions)],
-    ["Cash on Hand",          fmtM(fin.cash_on_hand_pre_ipo_usd_millions)],
+    ["Cash on Hand",          fmtM(_cashOnHand)],
     ["Post-IPO Runway",       fin.estimated_runway_months_post_ipo != null ? `${fin.estimated_runway_months_post_ipo} months` : "—"],
     ["Total Debt",            fmtM(fin.total_debt_usd_millions)],
-    ["Debt Maturity",         fin.debt_maturity_schedule    || "—"],
-    ["Covenant Risk",         fin.covenant_risk             || "—"],
-    ["Off-Balance-Sheet",     fin.off_balance_sheet_obligations || "—"],
+    ["Debt Maturity",         _debtMatFmt],
+    ["Covenant Risk",         safeRender(fin.covenant_risk, {fallback:"—"})],
+    ["Off-Balance-Sheet",     safeRender(fin.off_balance_sheet_obligations, {fallback:"—"})],
     ["SBC % Revenue",         fin.stock_based_comp_pct_revenue != null ? `${fin.stock_based_comp_pct_revenue}%` : "—"],
     ["Rule of 40",            fin.rule_of_40_score != null ? `${fin.rule_of_40_score}` : "—"],
     ["NRR",                   fin.nrr_pct != null ? `${fin.nrr_pct}%` : "—"],
     ["CAC/LTV",               fin.cac_ltv_ratio != null ? `${fin.cac_ltv_ratio}` : "—"],
-    ["Deferred Rev Trend",    fin.deferred_revenue_trend    || "—"],
+    ["Deferred Rev Trend",    safeRender(fin.deferred_revenue_trend || fin.deferred_revenue_usd_millions, {fallback:"—"})],
     ["A/R vs Rev Growth",     fin.ar_vs_revenue_growth_flag ? `<span style="color:var(--amber);font-weight:600">⚠ A/R growing faster than revenue</span>` : "No divergence flagged"],
   ];
   const segs = (fin.segments || []).filter(s => s.segment_name);
@@ -1415,17 +1451,28 @@ function renderMemo(m) {
   const dam = m.damodaran_comps || {};
   const liveFlag = m.live_comps_enriched ? `<span class="live-badge">LIVE</span>` : "";
   const damFlag  = dam.matched_industry   ? `<span class="live-badge" style="background:#6a5acd20;color:#9b8eea;border-color:#9b8eea40;margin-left:4px">DAM</span>` : "";
-  const liveCompsTable = liveCompsData.length > 0
+  // Comparable companies: support both liveCompsData (yfinance) and val.comparable_companies (static)
+  const _staticComps = (val.comparable_companies || []).filter(c => c && (c.ticker || c.company));
+  const _allCompsData = liveCompsData.length > 0 ? liveCompsData : _staticComps;
+  const liveCompsTable = _allCompsData.length > 0
     ? `<table class="fin-table" style="margin-top:14px;">
-        <thead><tr><th>Comp</th><th>Name</th><th style="text-align:right">EV</th><th style="text-align:right">Rev TTM</th><th style="text-align:right">EV/Rev</th></tr></thead>
-        <tbody>${liveCompsData.map(c => `
-          <tr>
-            <td class="label-col" style="color:var(--accent);font-weight:500">${c.ticker}</td>
-            <td class="label-col">${c.name || "—"}</td>
-            <td class="val-col">${c.ev_usd_millions != null ? "$"+c.ev_usd_millions.toLocaleString()+"M" : "—"}</td>
-            <td class="val-col">${c.revenue_ttm_usd_millions != null ? "$"+c.revenue_ttm_usd_millions.toLocaleString()+"M" : "—"}</td>
-            <td class="val-col">${c.ev_revenue_multiple != null ? c.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td>
-          </tr>`).join("")}
+        <thead><tr><th>Comp</th><th>Name</th><th style="text-align:right">EV/Rev</th><th style="text-align:right">EV/EBITDA</th><th style="text-align:right">Rev Growth</th></tr></thead>
+        <tbody>${_allCompsData.map(c => {
+          // Normalize field names across both schemas
+          const _ticker  = c.ticker || "—";
+          const _name    = c.name || c.company || "—";
+          const _evRev   = c.ev_revenue_multiple ?? c.ev_revenue;
+          const _evEbitda= c.ev_ebitda_multiple  ?? c.ev_ebitda;
+          const _revGrow = c.revenue_growth_pct;
+          const _notes   = c.notes ? `<br><span style="font-size:10px;color:var(--text-dim)">${c.notes}</span>` : "";
+          return `<tr>
+            <td class="label-col" style="color:var(--accent);font-weight:500">${_ticker}</td>
+            <td class="label-col">${_name}${_notes}</td>
+            <td class="val-col">${_evRev   != null ? _evRev.toFixed(1)+"x"   : "—"}</td>
+            <td class="val-col">${_evEbitda!= null ? _evEbitda.toFixed(1)+"x": "—"}</td>
+            <td class="val-col">${_revGrow != null ? _revGrow.toFixed(0)+"%"  : "—"}</td>
+          </tr>`;
+        }).join("")}
         </tbody>
       </table>` : "";
   const damRows = dam.matched_industry ? `
@@ -1481,7 +1528,12 @@ function renderMemo(m) {
         <tr><td>EV / EBITDA</td><td class="val-col">${val.ev_ebitda_multiple != null ? val.ev_ebitda_multiple.toFixed(1)+"x" : "<span style='color:var(--text-dim)'>N/A (neg. EBITDA)</span>"}</td></tr>
         <tr><td>Sector Median EV/Rev${val.sector_median_source === "live_market_data" ? " (live)" : val.sector_median_source === "damodaran" ? " (Damodaran)" : ""}</td><td class="val-col">${val.sector_median_ev_revenue != null ? val.sector_median_ev_revenue.toFixed(1)+"x" : "—"}</td></tr>
         <tr><td>Premium to Sector</td><td class="val-col" style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.premium_to_sector_median_pct != null ? val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
-        <tr><td>Public Comps</td><td class="val-col">${(val.public_comps || []).join(", ") || "—"}</td></tr>
+        <tr><td>Public Comps</td><td class="val-col">${(() => {
+          // Support string-array (old) or object-array (new) for comp tickers
+          const _pc = val.public_comps || val.comparable_companies || [];
+          if (!_pc.length) return "—";
+          return _pc.map(x => typeof x === "string" ? x : (x.ticker || x.company || safeRender(x))).join(", ") || "—";
+        })()}</td></tr>
         ${damRows}
       </tbody>
     </table>
@@ -1598,22 +1650,23 @@ function renderMemo(m) {
           </div>`
         ).join("")}</div>
       </div>` : "";
-  // CONDITIONAL: section 03 = brief summary only; full list renders as a standalone section after 03
+  // CONDITIONAL: support both 'conditions' and 'conditional_underwrite_conditions' field names
+  const _conditions = m.conditions || m.conditional_underwrite_conditions || [];
   const condSummaryHtml = m.recommendation === "CONDITIONAL"
     ? `<div class="memo-section">
         <h3><span class="section-num">03</span> Conditions for Underwriting</h3>
         <p class="memo-prose" style="color:var(--amber)">
-          ${(m.conditions || []).length} condition${(m.conditions || []).length !== 1 ? "s" : ""} must be satisfied before this deal can proceed to the deal committee. See the Conditions for Underwriting section below.
+          ${_conditions.length} condition${_conditions.length !== 1 ? "s" : ""} must be satisfied before this deal can proceed to the deal committee. See the Conditions for Underwriting section below.
         </p>
       </div>` : "";
   // Standalone detailed conditions block — renders only for CONDITIONAL, placed between 03 and 04
-  const condDetailHtml = m.recommendation === "CONDITIONAL" && (m.conditions || []).length > 0
+  const condDetailHtml = m.recommendation === "CONDITIONAL" && _conditions.length > 0
     ? `<div class="memo-section" style="border-left:3px solid var(--amber);padding-left:16px">
         <h3 style="color:var(--amber)">Conditions for Underwriting</h3>
         <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;font-style:italic">
           All conditions below must be resolved before this deal is presented to the deal committee.
         </p>
-        <div class="conditions-list">${m.conditions.map((c, i) =>
+        <div class="conditions-list">${_conditions.map((c, i) =>
           `<div class="condition-item">
             <span style="font-size:10px;font-weight:700;color:var(--amber);margin-right:8px;min-width:18px;display:inline-block">${i + 1}.</span>
             <span class="condition-text">${stripLeadingNum(c)}</span>
@@ -1637,36 +1690,69 @@ function renderMemo(m) {
     : "";
 
   // ── Build Proceeds tab content ──────────────────────────────────────────
+  // Supports both legacy pct-field schema and new breakdown-array schema
   const uop     = m.use_of_proceeds || {};
-  const offerMM = m.offering_size_usd_millions;
+  const offerMM = m.offering_size_usd_millions
+                  || uop.total_net_proceeds_usd_millions
+                  || uop.gross_proceeds_usd_millions;
   const pctFmt  = (v, label) => {
     if (v == null || v === 0) return "";
     const mm = offerMM != null ? ` ($${(offerMM * v / 100).toFixed(0)}M)` : "";
     return `<div class="legend-item"><span class="legend-dot" style="background:${label.col}"></span>${label.name}: <strong>${v.toFixed(0)}%</strong>${mm}</div>`;
   };
   const cats = [
-    { key:"growth_capital_pct",      name:"Growth Capital",       col:"var(--green)",  cls:"pbar-growth"  },
-    { key:"debt_repayment_pct",      name:"Debt Repayment",       col:"var(--amber)",  cls:"pbar-debt"    },
-    { key:"sponsor_distributions_pct",name:"Sponsor Distribution",col:"#e07b54",       cls:"pbar-sponsor" },
-    { key:"insider_liquidity_pct",   name:"Insider Liquidity",    col:"var(--red)",    cls:"pbar-insider" },
-    { key:"general_corporate_pct",   name:"General Corporate",    col:"var(--text-dim)",cls:"pbar-general"},
+    { key:"growth_capital_pct",       name:"Growth Capital",        col:"var(--green)",  cls:"pbar-growth"  },
+    { key:"debt_repayment_pct",       name:"Debt Repayment",        col:"var(--amber)",  cls:"pbar-debt"    },
+    { key:"sponsor_distributions_pct",name:"Sponsor Distribution",  col:"#e07b54",       cls:"pbar-sponsor" },
+    { key:"insider_liquidity_pct",    name:"Insider Liquidity",     col:"var(--red)",    cls:"pbar-insider" },
+    { key:"general_corporate_pct",    name:"General Corporate",     col:"var(--text-dim)",cls:"pbar-general"},
   ];
+  // Detect if we have the new breakdown array schema
+  const _breakdown = Array.isArray(uop.breakdown) ? uop.breakdown : [];
+  const _hasBarData = cats.some(c => uop[c.key] != null && uop[c.key] > 0);
+  // Build breakdown table for new schema (array of {purpose, amount_usd_millions, pct_of_proceeds})
+  const breakdownTable = _breakdown.length > 0 && !_hasBarData ? `
+    <table class="fin-table" style="margin-top:8px">
+      <thead><tr>
+        <th>Purpose</th>
+        <th style="text-align:right">Amount</th>
+        <th style="text-align:right">% of Proceeds</th>
+      </tr></thead>
+      <tbody>${_breakdown.map(row => {
+        const pct = row.pct_of_proceeds != null ? row.pct_of_proceeds.toFixed(1) + "%" : "—";
+        const amt = row.amount_usd_millions != null ? "$" + row.amount_usd_millions.toLocaleString() + "M" : "—";
+        return `<tr>
+          <td class="label-col">${safeRender(row.purpose, {fallback:"—"})}</td>
+          <td class="val-col">${amt}</td>
+          <td class="val-col">${pct}</td>
+        </tr>`;
+      }).join("")}</tbody>
+    </table>` : "";
   const barSegs = cats.map(c => {
     const v = uop[c.key] || 0;
     return v > 0 ? `<div class="pbar-seg ${c.cls}" style="width:${v}%" title="${c.name}: ${v}%"></div>` : "";
   }).join("");
   const legendItems = cats.map(c => pctFmt(uop[c.key], c)).join("");
-  const rf19Banner = uop.proceeds_flag_rf19
-    ? `<div class="rf19-banner">⚑ RF-19 PROCEEDS QUALITY — ${(uop.total_non_operational_pct||0).toFixed(0)}% of gross proceeds directed to non-operational uses (threshold: 30%)</div>`
+  // RF-19 banner: check both field names
+  const _rf19 = uop.proceeds_flag_rf19 || uop.rf19_flag;
+  const _rf19pct = uop.total_non_operational_pct;
+  const rf19Banner = _rf19
+    ? `<div class="rf19-banner">⚑ RF-19 PROCEEDS QUALITY — ${
+        _rf19pct != null ? _rf19pct.toFixed(0) + "%" : "significant portion"
+      } of net proceeds directed to non-operational uses (threshold: 30%)${
+        uop.rf19_comment ? " — " + uop.rf19_comment.slice(0, 160) + "…" : ""
+      }</div>`
     : "";
-  const hasProceeds = cats.some(c => uop[c.key] != null && uop[c.key] > 0);
+  const _hasAnyProceeds = _hasBarData || _breakdown.length > 0;
   const proceedsContent = `
     ${rf19Banner}
-    ${hasProceeds ? `
+    ${_hasBarData ? `
       <div class="proceeds-bar-wrap">
         <div class="proceeds-bar">${barSegs}</div>
         <div class="proceeds-legend">${legendItems}</div>
-      </div>` : `<p style="font-size:12px;color:var(--text-dim);margin:16px 0">No proceeds breakdown available for this filing.</p>`}
+      </div>` : ""}
+    ${breakdownTable}
+    ${!_hasAnyProceeds ? missingDataFlag("Use of Proceeds") : ""}
     ${uop.proceeds_narrative ? `<p class="proceeds-narrative">${uop.proceeds_narrative}</p>` : ""}
   `;
 
@@ -1735,7 +1821,31 @@ function renderMemo(m) {
 
       <div class="memo-section">
         <h3><span class="section-num">06</span> Business Overview</h3>
-        <p class="memo-prose">${m.business_overview || "Not available."}</p>
+        ${(() => {
+          const bo = m.business_overview;
+          if (!bo) return missingDataFlag("Business Overview");
+          // String: render directly
+          if (typeof bo === "string") return `<p class="memo-prose">${bo}</p>`;
+          // Object: render description + structured lists
+          const desc = bo.description || bo.overview || bo.summary || "";
+          const products  = (bo.key_products  || []).filter(Boolean);
+          const advtgs    = (bo.competitive_advantages || []).filter(Boolean);
+          const risks     = (bo.key_risks || []).filter(Boolean);
+          const bizModel  = bo.business_model || "";
+          const meta = [
+            bo.founded       ? `Founded: ${bo.founded}` : "",
+            bo.headquarters  ? `HQ: ${bo.headquarters}` : "",
+            bo.employees     ? `Employees: ${bo.employees.toLocaleString()}` : "",
+          ].filter(Boolean).join(" &nbsp;·&nbsp; ");
+          return [
+            meta ? `<p style="font-size:11px;color:var(--text-dim);margin-bottom:10px">${meta}</p>` : "",
+            desc ? `<p class="memo-prose">${desc}</p>` : "",
+            bizModel ? `<p class="memo-prose" style="margin-top:8px"><strong>Business Model:</strong> ${bizModel}</p>` : "",
+            products.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Key Products &amp; Services</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${products.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+            advtgs.length  ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Competitive Advantages</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${advtgs.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+            risks.length   ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Key Risks</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--amber);line-height:1.8">${risks.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+          ].join("");
+        })()}
       </div>
 
       <div class="memo-section">
@@ -1757,7 +1867,21 @@ function renderMemo(m) {
 
       ${m.macro_sector_context ? `<div class="memo-section">
         <h3><span class="section-num">13</span> Macro &amp; Sector Context</h3>
-        <p class="memo-prose">${m.macro_sector_context}</p>
+        ${(() => {
+          const mc = m.macro_sector_context;
+          if (typeof mc === "string") return `<p class="memo-prose">${mc}</p>`;
+          // Object: render thesis + tailwinds/headwinds/timing
+          const thesis    = mc.sector_thesis    || mc.overview || mc.description || "";
+          const timing    = mc.market_timing    || "";
+          const tailwinds = (mc.sector_tailwinds || mc.tailwinds || []).filter(Boolean);
+          const headwinds = (mc.sector_headwinds || mc.headwinds || []).filter(Boolean);
+          return [
+            thesis  ? `<p class="memo-prose">${thesis}</p>` : "",
+            timing  ? `<p class="memo-prose" style="margin-top:8px"><strong>Market Timing:</strong> ${timing}</p>` : "",
+            tailwinds.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--green);margin:12px 0 4px">Tailwinds</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${tailwinds.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+            headwinds.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--red);margin:12px 0 4px">Headwinds</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${headwinds.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+          ].join("") || `<p class="memo-prose">${safeRender(mc)}</p>`;
+        })()}
       </div>` : ""}
 
       ${(m.lead_underwriters || []).length > 0 ? (() => {
@@ -1910,7 +2034,24 @@ function buildSection11(m) {
 }
 
 function buildSection12(m) {
-  const allComps = (m.comparable_ipos || []).filter(c => c.company);
+  // Support both legacy flat array (m.comparable_ipos) and new nested schema (m.comparable_ipo_performance.comparable_ipos)
+  const _cipPerf = m.comparable_ipo_performance || {};
+  const _rawComps = m.comparable_ipos || _cipPerf.comparable_ipos || [];
+  // Normalize field aliases per schema version
+  const allComps = _rawComps.filter(c => c.company).map(c => ({
+    company:             c.company,
+    ticker:              c.ticker,
+    ipo_date:            c.ipo_date,
+    comp_type:           c.comp_type,
+    // old schema: offer_price / new schema: ipo_price
+    offer_price:         c.offer_price ?? c.ipo_price,
+    // old schema: first_day_pop_pct / new schema: first_day_return_pct
+    first_day_pop_pct:   c.first_day_pop_pct ?? c.first_day_return_pct,
+    // old schema: current_vs_offer_pct / new schema: current_vs_ipo_pct
+    current_vs_offer_pct: c.current_vs_offer_pct ?? c.current_vs_ipo_pct,
+    notes:               c.notes,
+  }));
+
   const primary   = allComps.filter(c => c.comp_type === "primary_ipo_comp");
   const secondary = allComps.filter(c => c.comp_type === "secondary_ipo_comp");
   // Legacy: comps without comp_type fall into primary for backwards compatibility
@@ -1941,13 +2082,24 @@ function buildSection12(m) {
     <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:16px 0 6px">Secondary Comps</p>
     <table class="comp-table">${thead}<tbody>${compTableRows(secondary)}</tbody></table>` : "";
 
-  const body = (primaryAll.length + secondary.length) > 0
+  const hasComps = (primaryAll.length + secondary.length) > 0;
+  const tableBlock = hasComps
     ? primaryBlock + secondaryBlock
     : `<p style="font-size:12px;color:var(--text-dim);margin-top:4px">No comparable IPO data available.</p>`;
 
+  // Narrative fields from new schema
+  const _analysis = _cipPerf.analysis || "";
+  const _sectorEnv = _cipPerf.sector_ipo_environment || "";
+  const narrativeBlock = (_analysis || _sectorEnv) ? `
+    <div style="margin-top:14px">
+      ${_sectorEnv ? `<p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:0 0 4px">Sector IPO Environment</p><p style="font-size:12px;color:var(--text-mid);line-height:1.6;font-family:'Libre Baskerville',serif;margin:0 0 10px">${_sectorEnv}</p>` : ""}
+      ${_analysis ? `<p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:0 0 4px">Analysis</p><p style="font-size:12px;color:var(--text-mid);line-height:1.6;font-family:'Libre Baskerville',serif;margin:0">${_analysis}</p>` : ""}
+    </div>` : "";
+
   return `<div class="memo-section">
     <h3><span class="section-num">17</span> Comparable IPO Performance</h3>
-    ${body}
+    ${tableBlock}
+    ${narrativeBlock}
   </div>`;
 }
 
@@ -2525,6 +2677,79 @@ function escAttr(s) {
 
 function recColor(rec) {
   return rec === "UNDERWRITE" ? "var(--green)" : rec === "CONDITIONAL" ? "var(--amber)" : "var(--red)";
+}
+
+// ── safeRender: converts any value to display-safe HTML string ─────────────
+// Prevents [object Object] from ever reaching the DOM.
+function safeRender(v, opts) {
+  opts = opts || {};
+  var fallback = opts.fallback != null ? opts.fallback : "—";
+  var sep      = opts.sep      != null ? opts.sep      : ", ";
+  if (v == null)             return fallback;
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (typeof v === "number")  return String(v);
+  if (typeof v === "string")  return v || fallback;
+  if (Array.isArray(v)) {
+    if (v.length === 0) return fallback;
+    var parts = v.map(function(x) {
+      if (x == null)              return "";
+      if (typeof x !== "object")  return String(x);
+      // Prefer common text fields on array-item objects
+      return x.text || x.description || x.narrative || x.summary || x.name || x.label ||
+             (x.year && x.amount_usd_millions != null
+               ? x.year + ": $" + x.amount_usd_millions.toLocaleString() + "M"
+               : JSON.stringify(x));
+    }).filter(Boolean);
+    return parts.join(sep) || fallback;
+  }
+  if (typeof v === "object") {
+    // Prefer named text fields for objects
+    var txt = v.text || v.description || v.narrative || v.summary ||
+              v.sector_thesis || v.overview || v.content;
+    if (txt) return txt;
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
+// ── missingDataFlag: amber warning shown when a section has no data ─────────
+function missingDataFlag(sectionLabel) {
+  return '<div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.3);' +
+    'border-radius:4px;padding:12px 16px;margin:8px 0;font-size:12px;color:var(--amber)">' +
+    '⚠ Data not returned by model' + (sectionLabel ? ' (' + sectionLabel + ')' : '') +
+    ' — re-run analysis to populate this section.</div>';
+}
+
+// ── validateMemo: checks critical fields before render; logs to console ──────
+function validateMemo(memo) {
+  var checks = [
+    { path: "company_name",          type: "string"  },
+    { path: "recommendation",        type: "string"  },
+    { path: "scores.weighted_total", type: "number"  },
+    { path: "executive_summary",     type: "string"  },
+    { path: "red_flags",             type: "array"   },
+    { path: "financials",            type: "object"  },
+    { path: "valuation",             type: "object"  },
+    { path: "accounting_practices",  type: "object"  },
+    { path: "esg_disclosure",        type: "object"  },
+  ];
+  checks.forEach(function(c) {
+    var parts = c.path.split(".");
+    var v = memo;
+    for (var i = 0; i < parts.length; i++) v = v && v[parts[i]];
+    var actual = Array.isArray(v) ? "array" : typeof v;
+    if (v == null || (c.type !== "any" && actual !== c.type)) {
+      console.warn("[validateMemo] MISSING/WRONG TYPE:", c.path,
+        "— expected", c.type, "got", actual + ":", v);
+    }
+  });
+  // Warn about [object Object] risks in free-text fields
+  ["business_overview","macro_sector_context"].forEach(function(k) {
+    var v = memo[k];
+    if (v != null && typeof v === "object" && !Array.isArray(v)) {
+      console.info("[validateMemo] NOTE:", k, "is an object — safeRender will be applied automatically.");
+    }
+  });
 }
 
 // ─────────────────────────────────────────────────────────

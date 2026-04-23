@@ -202,6 +202,45 @@ RF-25: ACCOUNTING QUALITY RISK — Overall Accounting Quality Score ≤5. Multip
 | Cortigent Inc. | 2026-03-05 | PASS | 46 |
 | Lendbuzz Inc. | 2026-03-06 | TBD | TBD |
 
+## DEFENSIVE RENDERING LAYER (ipo_screener_app.html)
+
+Three global helpers are defined in the HELPERS section and MUST be used in all section renderers:
+
+### `safeRender(value, opts)`
+Converts any value to a display-safe string — never produces `[object Object]`.
+- `null/undefined` → opts.fallback (default `"—"`)
+- `boolean` → `"Yes"` / `"No"`
+- `number` → `String(v)`
+- `string` → value or fallback if empty
+- `Array` → array items joined with opts.sep (default `", "`); each item recursively safeRender'd
+- `Object` → prefers named text fields (`description`, `text`, `name`, `label`, `summary`, `narrative`) else JSON.stringify
+- Use for any field that might be a primitive, array, or object depending on schema version.
+
+### `missingDataFlag(sectionLabel)`
+Returns an amber warning `<div>` when a section has no data. Use instead of empty string or silent omission.
+
+### `validateMemo(memo)`
+Called in `selectCompany()` before `renderMemo()`. Logs `console.warn` for missing or wrong-type critical fields. Do not remove this call.
+
+### Schema Dual-Support Rules
+When adding or editing a section renderer:
+1. Check both old field name AND new field name with `||` or `??` fallback chains.
+2. Use `safeRender()` for any field that is narrative text — never interpolate raw object values.
+3. For array-of-objects fields, always `.map()` with field normalization before rendering.
+4. Known field aliases (old → new):
+   - `m.comparable_ipos` → `m.comparable_ipo_performance.comparable_ipos`
+   - `c.offer_price` → `c.ipo_price`
+   - `c.first_day_pop_pct` → `c.first_day_return_pct`
+   - `c.current_vs_offer_pct` → `c.current_vs_ipo_pct`
+   - `fin.revenue_usd_millions.ttm` → `fin.revenue_ttm_usd_millions`
+   - `fin.revenue_usd_millions.year_minus_1` → `fin.revenue_prior_year_usd_millions`
+   - `fin.revenue_growth_yoy_pct` → `fin.revenue_growth_pct`
+   - `fin.cash_on_hand_pre_ipo_usd_millions` → `fin.cash_usd_millions`
+   - `uop.growth_capital_pct` (legacy %) → `uop.breakdown[]` (array of objects)
+   - `uop.proceeds_flag_rf19` → `uop.rf19_flag`
+   - `m.conditions` → `m.conditional_underwrite_conditions`
+   - `val.public_comps` (strings) → `val.comparable_companies` (objects)
+
 ## COMMON ISSUES & FIXES
 - Blank pages in PDF: check for .memo-header-wrap not hidden in @media print
 - damBench temporal dead zone: define const damBench BEFORE const valSection
