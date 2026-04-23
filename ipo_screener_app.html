@@ -784,9 +784,12 @@
     #memo-panel .fin-table,
     #memo-panel .dam-table  { table-layout: fixed; width: 100%; }
     #memo-panel .fin-table td:first-child,
-    #memo-panel .dam-table td:first-child { width: 60%; word-wrap: break-word; }
+    #memo-panel .dam-table td:first-child { width: 60%; word-wrap: break-word; overflow-wrap: break-word; }
     #memo-panel .fin-table td:last-child,
-    #memo-panel .dam-table td:last-child  { width: 40%; }
+    #memo-panel .dam-table td:last-child  { width: 40%; word-wrap: break-word; overflow-wrap: break-word; white-space: normal !important; }
+    /* Prevent individual table rows from orphaning across page boundaries */
+    #memo-panel .fin-table tr,
+    #memo-panel .dam-table tr { page-break-inside: avoid; break-inside: avoid; }
     /* ── Accounting table ── */
     #memo-panel .acct-table { table-layout: fixed; width: 100%; }
     #memo-panel .acct-table td:nth-child(1) { width: 17%; }
@@ -943,10 +946,15 @@
   /* ── PDF Cover & Part Dividers (injected by exportPDF only) ── */
   .pdf-part-divider { display: none; }
   @media print {
-    /* Part dividers — inline separator, no dedicated page */
+    /* Part dividers — flow naturally; page-break-after:avoid keeps divider
+       attached to the following section so no blank page is created between them.
+       The browser will naturally push the divider to the top of a new page when
+       [divider + section] don't fit on the current page. */
     .pdf-part-divider {
       display: flex; align-items: center; gap: 14px;
-      margin: 44px 0 28px; background: transparent;
+      margin: 28px 0 16px; background: transparent;
+      page-break-after: avoid; break-after: avoid;
+      page-break-before: auto; break-before: auto;
     }
     .pdf-divider-top-rule { display:block; height:3px; background:#8a6e30; flex:1; }
     .pdf-part-label       { display:inline-block; font-variant:small-caps;
@@ -2489,8 +2497,8 @@ function exportPDF() {
     { secNum: "01", part: "Part I",   title: "Recommendation"                },
     { secNum: "04", part: "Part II",  title: "Risk Assessment"               },
     { secNum: "06", part: "Part III", title: "Business & Financial Analysis"  },
-    { secNum: "14", part: "Part IV",  title: "Deal Structure & Diligence"    },
-    { secNum: "20", part: "Part V",   title: "ESG"                           },
+    { secNum: "13", part: "Part IV",  title: "Deal Structure & Diligence"    },
+    { secNum: "19", part: "Part V",   title: "ESG"                           },
   ];
 
   for (const pd of partDefs) {
