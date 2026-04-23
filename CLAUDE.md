@@ -59,41 +59,89 @@ and renders them in a browser-based app with PDF export.
 ## SCORING FRAMEWORK
 
 ### 5 Dimension Weights
-| Dimension | Weight |
-|---|---|
-| Business Model Quality | 25% |
-| Market Size & Competitive Position | 20% |
-| Valuation Attractiveness | 20% |
-| Management & Governance | 20% |
-| Financial Health & Runway | 15% |
+| Dimension | Base Weight | Leveraged Issuer Weight |
+|---|---|---|
+| Business Model Quality | 25% | 25% |
+| Market Size & Competitive Position | 20% | 20% |
+| Valuation Attractiveness | 20% | **15%** |
+| Management & Governance | 20% | 20% |
+| Financial Health & Runway | 15% | **20%** |
 
-### Score Thresholds
-- ≥80: UNDERWRITE — present to deal committee
-- 55–79: CONDITIONAL — present with conditions noted
-- <55: PASS — do not present
+**Leveraged issuer detection** (auto-computed in Python after Opus returns JSON):
+- GAAP-profitable + Debt/Adj.EBITDA >4x → `leveraged_issuer_flag: true`
+- GAAP-loss + Debt/Adj.EBITDA >5x → `leveraged_issuer_flag: true`
+When triggered: `apply_leverage_adjustments()` recalculates weighted_total with
+FHR 20% / VA 15% and appends an adjustment note to scores.adjustments[].
+App displays amber banner: "LEVERAGED ISSUER — Financial Health weight increased to 20%."
+
+**Leverage hard floor** (Python-enforced after leverage detection):
+- GAAP-profitable + Debt/EBITDA >4x: Financial Health cannot score above 4.0
+- GAAP-loss + Debt/AdjEBITDA >6x AND interest expense >20% of revenue: FHR ≤4.0
+
+### Score Thresholds (updated 2026-04-23)
+| Score | Band | JSON value | App badge color |
+|---|---|---|---|
+| ≥75 | UNDERWRITE | `"UNDERWRITE"` | green |
+| 65–74 | CONDITIONAL LIGHT | `"CONDITIONAL_LIGHT"` | amber |
+| 55–64 | CONDITIONAL HEAVY | `"CONDITIONAL_HEAVY"` | orange |
+| <55 | PASS | `"PASS"` | red |
+
+Note: recommendation field uses underscores (`CONDITIONAL_LIGHT`). The app displays
+spaces (`CONDITIONAL LIGHT`) via `.replace(/_/g, " ")`.
 
 ### Red Flag Deductions
 Deduction amounts by severity (applied to the dimension score before weighting):
-- CRITICAL → AUTOMATIC PASS (RF-01 only); score_deduction: null
-- HIGH     → −2.5 pts from affected dimension
+- CRITICAL → Special treatment (see RF-01A/01B); score_deduction: null
+- HIGH     → −2.5 pts from affected dimension (except RF-01A: −4.0)
 - MEDIUM   → −1.5 pts from affected dimension
 - LOW      → −1.0 pt from affected dimension
 
-Automatic PASS triggers (regardless of composite score):
-- RF-01: Going concern audit opinion — enforced by Python in apply_scoring_adjustments()
-- RF-22 is a STRONG PASS signal but NOT automatic — system prompt says "Recommend PASS
-  unless extraordinary circumstances"; do not treat it as a hard override
+**RF-01 split (2026-04-23):**
+- **RF-01A GOING CONCERN (CAPITAL-DEFICIENT):** IPO proceeds explicitly resolve the
+  going concern. Treatment: CONDITIONAL_HEAVY (not automatic PASS). Deducts 4.0 pts
+  from Financial Health. Mandatory disclosure at deal committee.
+  Set `going_concern_type: "capital_deficient"`, `going_concern: false`.
+- **RF-01B GOING CONCERN (STRUCTURAL):** Fundamental business failure — recurring losses,
+  covenant violations, liquidity problems IPO proceeds alone cannot fix.
+  Treatment: AUTOMATIC PASS. Set `going_concern: true`, `going_concern_type: "structural"`.
+  Python-enforced in `apply_scoring_adjustments()`. Default if ambiguous.
 
-### RF → Dimension Mapping
+**RF-07 split (2026-04-23):**
+- **RF-07 VALUATION DISCONNECT:** Extreme catch-all (>3x sector median). HIGH, −2.5
+- **RF-07A EV/REVENUE PREMIUM:** EV/Rev >50% above SIC-matched median. HIGH, −2.5
+- **RF-07B EV/EBITDA GROWTH MISMATCH:** EV/EBITDA >25x on GAAP-loss + <30% YoY growth,
+  OR EV/EBITDA >35x on any GAAP-loss company. HIGH, −2.5
+  **Combined RF-07 cap: max −7.5 pts total from all three.**
+
+**RF-02 customer concentration thresholds (updated 2026-04-23):**
+- Top customer >40% revenue: HIGH, −2.5 pts from **Market & Competitive Position**
+- Top customer >60% revenue: CRITICAL, −3.0 pts from **Market & Competitive Position**
+  (dimension changed from Business Model Quality)
+
+**Management & Governance caps (ISS/Glass Lewis 2025):**
+- Dual-class vote ratio >10:1 + no sunset + founder voting >70%: M&G capped at 5.0
+  (Python-enforced in `apply_governance_cap()`; set `management_governance_cap_reason`)
+- Independent board <50%: deduct 2.5 pts (HIGH)
+- No lead independent director: deduct 1.5 pts (MEDIUM)
+
+Automatic PASS override:
+- RF-01B structural going concern — Python-enforced in `apply_scoring_adjustments()`
+- RF-22 is a strong PASS signal but NOT automatic override
+
+### RF → Dimension Mapping (updated 2026-04-23)
 | RF | Name | Dimension | Sev | Deduction |
 |---|---|---|---|---|
-| RF-01 | Going Concern | Financial Health | CRITICAL | AUTO PASS |
-| RF-02 | Customer Concentration | Business Model | HIGH | −2.5 |
+| RF-01A | Going Concern (Capital-Deficient) | Financial Health | CRITICAL | −4.0, CONDITIONAL |
+| RF-01B | Going Concern (Structural) | Financial Health | CRITICAL | AUTO PASS |
+| RF-02 | Customer Concentration >40% | **Market Position** | HIGH | −2.5 |
+| RF-02 | Customer Concentration >60% | **Market Position** | CRITICAL | −3.0 |
 | RF-03 | Revenue Quality | Financial Health | HIGH | −2.5 |
 | RF-04 | Insider Liquidity Grab | Mgmt & Governance | HIGH | −2.5 |
 | RF-05 | Runway Risk | Financial Health | HIGH | −2.5 |
 | RF-06 | Governance Risk | Mgmt & Governance | HIGH | −2.5 |
-| RF-07 | Valuation Disconnect | Valuation | HIGH | −2.5 |
+| RF-07 | Valuation Disconnect (extreme) | Valuation | HIGH | −2.5 |
+| RF-07A | EV/Revenue Premium >50% | Valuation | HIGH | −2.5 |
+| RF-07B | EV/EBITDA Growth Mismatch | Valuation | HIGH | −2.5 |
 | RF-08 | Management Red Flags | Mgmt & Governance | HIGH | −2.5 |
 | RF-09 | Related Party Risk | Mgmt & Governance | MEDIUM | −1.5 |
 | RF-10 | Audit Issues | Financial Health | HIGH | −2.5 |
@@ -113,13 +161,12 @@ Automatic PASS triggers (regardless of composite score):
 | RF-24 | Auditor Quality Risk | Financial Health | MEDIUM | −1.5 |
 | RF-25 | Accounting Quality Risk | Financial Health + BMQ | HIGH | −2.5 each |
 
-Note: RF-20 is NOT a dimension-level deduction — it is applied post-hoc by
-apply_scoring_adjustments() directly to weighted_total, not to any dimension score.
+Note: RF-20 is NOT a dimension-level deduction — applied post-hoc by Python to
+weighted_total. RF-07 combined cap: max −7.5 from all three RF-07 variants.
 
 ### Scoring Floor Rule
-If 3+ HIGH or CRITICAL flags trigger, weighted_total must be ≤55 (PASS) unless both
-Business Model Quality and Market Position score ≥8.5. A great product in a broken
-deal structure is still a PASS.
+If 3+ HIGH or CRITICAL flags trigger, weighted_total must be ≤64 (CONDITIONAL HEAVY
+or PASS) unless BMQ and Market Position both ≥8.5.
 
 ## MEMO SECTION ORDER (renderMemo + exportPDF)
 
@@ -200,13 +247,16 @@ COVER PAGE — Executive Summary (no section number; part of cover page)
 ## RED FLAG CODES REFERENCE
 These definitions MUST match the system prompt Red Flag Inference Engine exactly.
 
-RF-01: GOING CONCERN — Auditor doubt re: ability to continue as going concern. AUTOMATIC PASS.
-RF-02: CUSTOMER CONCENTRATION — Top 3 customers >40% revenue, or top 1 customer >20% revenue.
+RF-01A: GOING CONCERN (CAPITAL-DEFICIENT) — IPO proceeds explicitly resolve the going concern; solely a pre-IPO capital deficiency. Treatment: CONDITIONAL_HEAVY (not auto-PASS). Deducts 4.0 pts from Financial Health. Set going_concern_type: "capital_deficient".
+RF-01B: GOING CONCERN (STRUCTURAL) — Recurring losses, covenant violations, or liquidity problems IPO proceeds alone cannot fix. AUTOMATIC PASS. Set going_concern: true, going_concern_type: "structural". Default if ambiguous.
+RF-02: CUSTOMER CONCENTRATION — Top customer >40% = HIGH −2.5 pts from Market Position. Top customer >60% = CRITICAL −3.0 pts from Market Position.
 RF-03: REVENUE QUALITY — A/R growing >1.5× faster than revenue; deferred revenue declining despite revenue growth; aggressive non-GAAP adjustments without justification.
 RF-04: INSIDER LIQUIDITY GRAB — Secondary shares >30% of offering; founders/sponsors cashing out while company runs losses.
 RF-05: RUNWAY RISK — Post-IPO cash runway <18 months at current burn rate.
 RF-06: GOVERNANCE RISK — Dual-class with founder voting >70% post-IPO; no independent board majority; classified board.
-RF-07: VALUATION DISCONNECT — Priced >2× sector median EV/Revenue with no superior growth or margin justification.
+RF-07: VALUATION DISCONNECT (EXTREME) — Priced >3× sector median EV/Revenue with no justification. Catch-all.
+RF-07A: EV/REVENUE PREMIUM — EV/Revenue >50% above SIC-matched sector median. HIGH, −2.5 pts Valuation.
+RF-07B: EV/EBITDA GROWTH MISMATCH — EV/EBITDA >25× on GAAP-loss + <30% YoY, OR >35× on any GAAP-loss. HIGH, −2.5 pts. Combined RF-07 cap: max −7.5 pts.
 RF-08: MANAGEMENT RED FLAGS — CEO or CFO tenure <12 months; prior failures or SEC enforcement; key-man concentration without succession.
 RF-09: RELATED PARTY RISK — Material revenue from affiliates, loans to executives, above-market IP licensing from insiders.
 RF-10: AUDIT ISSUES — Auditor change <24 months without disclosed reason; material weakness in internal controls; non-Big 4 for >$100M revenue company.
@@ -221,7 +271,7 @@ RF-18: WORKING CAPITAL STRESS — Negative working capital or current ratio <1.0
 RF-19: PROCEEDS QUALITY — >30% of gross IPO proceeds to debt repayment, sponsor distributions, or existing shareholder liquidity rather than company operations.
 RF-20: SYNDICATE SPREAD RISK — More than 4 lead/co-manager underwriters on a deal below $500M. Signals difficulty placing the book.
 RF-21: PE / SPONSOR OVERHANG — PE/sponsor ownership >40% post-IPO with lockup ≤180 days; predictable secondary selling pressure.
-RF-22: SMALL FIRM SUITABILITY — Offering size <$50M, or TTM revenue <$10M, or pre-revenue stage. Recommend PASS.
+RF-22: SMALL FIRM SUITABILITY — Offering size <$50M, or TTM revenue <$10M, or pre-revenue stage. Strong PASS signal (not automatic override).
 RF-23: INSIDER LIQUIDITY OVERHANG — Secondary shares exceed 20% of total offering.
 RF-24: AUDITOR QUALITY RISK — Auditor is not Big 4 or recognized mid-tier on a deal with offering size >$50M.
 RF-25: ACCOUNTING QUALITY RISK — Overall Accounting Quality Score ≤5. Multiple aggressive accounting policy choices.

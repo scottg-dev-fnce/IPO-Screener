@@ -433,11 +433,27 @@ RED FLAG INFERENCE ENGINE
 
 Infer the following structural risks. Each confirmed flag reduces the score.
 
-RF-01 GOING CONCERN         -- Auditor doubt re: ability to continue operations.
-                               AUTOMATIC PASS. No exceptions.
+RF-01A GOING CONCERN (CAPITAL-DEFICIENT) -- S-1 explicitly states IPO proceeds
+                               resolve the going concern (sole issue is pre-IPO capital
+                               deficiency). Structural economics are sound. Treatment:
+                               CONDITIONAL — NOT automatic PASS. Set going_concern_type:
+                               "capital_deficient". Deducts 4.0 pts from Financial Health.
+                               Mandatory deal committee disclosure: "Going concern opinion
+                               present — IPO proceeds are the stated resolution. Underwriting
+                               is contingent on successful pricing and closing." CRITICAL severity.
 
-RF-02 CUSTOMER CONCENTRATION-- Top 3 customers >40% revenue, or top 1 >20%.
-                               Escalate to CONDITIONAL or PASS.
+RF-01B GOING CONCERN (STRUCTURAL) -- Going concern reflects fundamental business model
+                               failure: recurring losses not resolved by proceeds, deteriorating
+                               margins, covenant violations, or liquidity problems IPO money
+                               alone cannot fix. Treatment: AUTOMATIC PASS. No exceptions.
+                               Set going_concern: true AND going_concern_type: "structural".
+                               If ambiguous between 01A and 01B, default to RF-01B.
+
+RF-02 CUSTOMER CONCENTRATION-- Top customer >40% of revenue: HIGH severity,
+                               deducts 2.5 pts from Market & Competitive Position.
+                               Top customer >60% of revenue: CRITICAL severity, deducts
+                               3.0 pts from Market & Competitive Position. These replace
+                               any lesser thresholds. Escalate to CONDITIONAL or PASS.
 
 RF-03 REVENUE QUALITY       -- A/R growing >1.5x faster than revenue.
                                Deferred revenue declining despite revenue growth.
@@ -452,8 +468,23 @@ RF-05 RUNWAY RISK           -- Post-IPO cash runway <18 months at current burn r
 RF-06 GOVERNANCE RISK       -- Dual-class with founder voting >70% post-IPO.
                                No independent board majority. Classified board.
 
-RF-07 VALUATION DISCONNECT  -- Priced >2x sector median EV/Revenue with no superior
-                               growth or margin justification.
+RF-07  VALUATION DISCONNECT  -- Extreme catch-all: priced >3x sector median
+                               EV/Revenue with no growth or margin justification, OR any
+                               overall valuation combination that is plainly unjustifiable.
+                               HIGH severity, deducts 2.5 pts from Valuation Attractiveness.
+
+RF-07A EV/REVENUE PREMIUM      -- EV/Revenue premium >50% above SIC-code-matched sector
+                               median. Use the SIC code already extracted from EDGAR to
+                               select the correct Damodaran/sector median — do not use a
+                               flat benchmark. HIGH severity, deducts 2.5 pts from
+                               Valuation Attractiveness.
+
+RF-07B EV/EBITDA GROWTH MISMATCH -- EV/EBITDA >25x on GAAP-loss companies growing <30%
+                               YoY revenue, OR EV/EBITDA >35x on any GAAP-loss company
+                               regardless of growth rate. HIGH severity, deducts 2.5 pts
+                               from Valuation Attractiveness.
+                               COMBINED CAP: Maximum total Valuation deduction from all
+                               three RF-07 flags is 7.5 pts (floor at 0.0).
 
 RF-08 MANAGEMENT RED FLAGS  -- CEO or CFO tenure <12 months. Prior failures or
                                SEC enforcement. Key-man concentration without succession.
@@ -575,14 +606,14 @@ RED FLAG DEDUCTION AMOUNTS BY SEVERITY:
 RED FLAG → DIMENSION ASSIGNMENTS (explicit mapping — apply these deductions):
 
   Business Model Quality (25%):
-    RF-02  Customer Concentration    HIGH    -2.5
     RF-12  Regulatory Overhang       HIGH    -2.5
     RF-15  Product Concentration     MEDIUM  -1.5
     RF-17  Technology Obsolescence   HIGH    -2.5
     RF-25  Accounting Quality Risk   HIGH    -2.5  (also deducts Financial Health)
 
-  Financial Health & Runway (15%):
-    RF-01  Going Concern             CRITICAL → AUTOMATIC PASS
+  Financial Health & Runway (15% base; 20% for leveraged issuers):
+    RF-01A Going Concern Capital-Def CRITICAL → CONDITIONAL; deduct 4.0 from FHR
+    RF-01B Going Concern Structural  CRITICAL → AUTOMATIC PASS
     RF-03  Revenue Quality           HIGH    -2.5
     RF-05  Runway Risk               HIGH    -2.5
     RF-10  Audit Issues              HIGH    -2.5
@@ -593,6 +624,7 @@ RED FLAG → DIMENSION ASSIGNMENTS (explicit mapping — apply these deductions)
     RF-25  Accounting Quality Risk   HIGH    -2.5  (also deducts Business Model Quality)
 
   Market Size & Competitive Position (20%):
+    RF-02  Customer Concentration    HIGH -2.5 (>40%) | CRITICAL -3.0 (>60%)
     RF-13  Market Timing Risk        MEDIUM  -1.5
     RF-16  Geographic Concentration  MEDIUM  -1.5
 
@@ -605,29 +637,73 @@ RED FLAG → DIMENSION ASSIGNMENTS (explicit mapping — apply these deductions)
     RF-21  PE/Sponsor Overhang       MEDIUM  -1.5
     RF-23  Insider Liquidity Overhang MEDIUM -1.5
 
-  Valuation Attractiveness (20%):
-    RF-07  Valuation Disconnect      HIGH    -2.5
+  Valuation Attractiveness (20% base; 15% for leveraged issuers):
+    RF-07  Valuation Disconnect      HIGH    -2.5  (extreme catch-all)
+    RF-07A EV/Revenue Premium >50%   HIGH    -2.5  (SIC-matched median)
+    RF-07B EV/EBITDA Growth Mismatch HIGH    -2.5  (cap: max -7.5 total from all RF-07)
 
   NOTE — RF-20 (Syndicate Spread Risk) is applied as a post-hoc Python penalty to
   weighted_total directly (-1.5 per excess underwriter, capped at -5). It does NOT
   map to a dimension score. Do NOT apply it to any dimension; the pipeline handles it.
   RF-22 (Small Firm Suitability) is a strong PASS signal — assign recommendation PASS.
 
+BUSINESS MODEL QUALITY — SECTOR-ADJUSTED RUBRIC ANCHORS:
+  Universal anchors:
+    9–10 = Proven unit economics, diversified customer base, best-in-class retention,
+           strong defensible moat. Recurring revenue, expanding margins, pricing power.
+    7–8  = Strong model with one structural concern (concentration, early-stage scaling,
+           one product dependency). Economics are directionally correct.
+    5–6  = Viable model with meaningful execution risk. Some unit economics concerns,
+           margin trajectory uncertain, TAM claims not fully validated.
+    3–4  = Unproven model or single point of failure. Pre-profitability with unclear
+           path, or heavily dependent on one customer/product/channel.
+    1–2  = Pre-revenue or fundamentally broken economics. Negative gross margin with
+           no credible path, or total reliance on a single counterparty.
+
+  Sector gross margin benchmarks (calibrate score accordingly):
+    SaaS/Software:        world-class >75%  |  good 60–75%  |  concerning <50%
+    AI Infrastructure/
+    Hardware:             world-class >65%  |  good 45–65%  |  concerning <35%
+    Marketplace:          world-class >55%  |  good 35–55%  |  concerning <25%
+    Industrial/
+    Manufacturing:        world-class >40%  |  good 25–40%  |  concerning <20%
+    Biotech/Pharma
+    (pre-revenue):        score on pipeline quality, addressable indication size,
+                          and cash runway — NOT on margin.
+
+  NRR benchmarks (subscription/SaaS businesses only):
+    world-class >120%  |  good 105–120%  |  acceptable 90–105%  |  concerning <90%
+
+MANAGEMENT & GOVERNANCE — SCORE CAPS (ISS / Glass Lewis 2025 standards):
+  Cap 1: Extreme dual-class structure — if ALL three conditions are met:
+    (a) vote ratio >10:1 between insider and public share classes,
+    (b) no time-based or market-cap-based sunset clause, AND
+    (c) founder/insider voting control >70% post-IPO
+    → Management & Governance CANNOT score above 5.0 regardless of other factors.
+    Set management_governance_cap_reason: "extreme_dual_class".
+  Cap 2: Independent board <50% — deduct 2.5 pts (HIGH flag). This is separate
+    from RF-06 and accumulates with it.
+  Cap 3: No lead independent director designated — deduct 1.5 pts (MEDIUM flag).
+  These caps and deductions are enforced by Python post-processing in addition to
+  being reflected in your dimension score.
+
 RECOMMENDATION THRESHOLDS:
-  >=80  -> UNDERWRITE    -- Present to deal committee
-  55-79 -> CONDITIONAL   -- List specific conditions required
-  <55   -> PASS          -- Document primary reasons
-  RF-01 -> AUTOMATIC PASS regardless of score — set going_concern: true
+  >=75  -> UNDERWRITE          -- Present to deal committee
+  65-74 -> CONDITIONAL LIGHT   -- Minor conditions, likely to underwrite with small adjustments
+  55-64 -> CONDITIONAL HEAVY   -- Significant concerns, material conditions must be resolved
+  <55   -> PASS                -- Document primary reasons
+  RF-01A -> CONDITIONAL (not automatic PASS) — IPO proceeds resolve capital deficiency
+  RF-01B -> AUTOMATIC PASS regardless of score — set going_concern: true
 
 SCORING FLOOR RULE: If 3 or more HIGH or CRITICAL flags are triggered across all
-dimensions, weighted_total MUST be ≤55 (PASS territory) unless business model and
-market position are both exceptional (scores ≥8.5). A strong product in a structurally
-broken deal is still a PASS.
+dimensions, weighted_total MUST be ≤64 (CONDITIONAL HEAVY or PASS) unless business
+model and market position are both exceptional (scores ≥8.5). A strong product in a
+structurally broken deal is still a CONDITIONAL HEAVY at best.
 
 DEAL COMMITTEE NARRATIVE:
   Populate the `deal_committee_recommendation` field with 2-3 sentences in institutional
   ECM language summarizing the recommendation rationale for a deal committee audience.
-  Lead with the recommendation (UNDERWRITE / CONDITIONAL / PASS), state the primary
+  Lead with the recommendation (UNDERWRITE / CONDITIONAL_LIGHT / CONDITIONAL_HEAVY / PASS), state the primary
   driver (e.g., valuation, financial health, governance), and note the single most
   important risk or condition. This field is required — do not leave it empty.
 
@@ -814,6 +890,9 @@ Use this exact schema:
   "red_flags": [],
   "red_flag_count": 0,
   "going_concern": false,
+  "going_concern_type": null,
+  "leveraged_issuer_flag": false,
+  "management_governance_cap_reason": null,
 
   "scores": {
     "business_model_quality": null,
@@ -821,7 +900,10 @@ Use this exact schema:
     "market_competitive_position": null,
     "management_governance": null,
     "valuation_attractiveness": null,
-    "weighted_total": null
+    "weighted_total": null,
+    "fhr_weight_used": 0.15,
+    "va_weight_used": 0.20,
+    "adjustments": []
   },
 
   "recommendation": "",
@@ -2337,22 +2419,223 @@ def enrich_valuation_with_live_comps(memo: dict) -> dict:
     return memo
 
 
+def _derive_recommendation(wt: float) -> str:
+    """Derive recommendation band from weighted_total using current thresholds."""
+    if wt >= 75:
+        return "UNDERWRITE"
+    elif wt >= 65:
+        return "CONDITIONAL_LIGHT"
+    elif wt >= 55:
+        return "CONDITIONAL_HEAVY"
+    else:
+        return "PASS"
+
+
+def apply_leverage_adjustments(memo: dict) -> dict:
+    """
+    Detect leveraged issuers and reweight Financial Health / Valuation dimensions.
+
+    Leveraged issuer criteria:
+      - GAAP-profitable (net_income >= 0): Debt/Adj.EBITDA > 4x
+      - GAAP-loss        (net_income <  0): Debt/Adj.EBITDA > 5x
+    When triggered: FHR weight 15%→20%, VA weight 20%→15%.
+    Recalculates weighted_total. Sets leveraged_issuer_flag: true.
+    """
+    scores = memo.get("scores") or {}
+    fin    = memo.get("financials") or {}
+    if not all(k in scores for k in ("business_model_quality", "financial_health_runway",
+                                      "market_competitive_position", "management_governance",
+                                      "valuation_attractiveness")):
+        return memo
+
+    total_debt = fin.get("total_debt_usd_millions") or 0
+    ebitda     = fin.get("ebitda_usd_millions")
+    net_income = fin.get("net_income_usd_millions")
+
+    if not ebitda or ebitda <= 0 or total_debt <= 0:
+        return memo  # can't compute leverage ratio
+
+    leverage_ratio = total_debt / ebitda
+    is_gaap_loss   = (net_income is not None and net_income < 0)
+    threshold      = 5.0 if is_gaap_loss else 4.0
+
+    if leverage_ratio <= threshold:
+        return memo  # not a leveraged issuer
+
+    memo["leveraged_issuer_flag"] = True
+    fhr_w, va_w = 0.20, 0.15
+
+    bmq = scores.get("business_model_quality") or 0
+    fhr = scores.get("financial_health_runway") or 0
+    mcp = scores.get("market_competitive_position") or 0
+    mg  = scores.get("management_governance") or 0
+    va  = scores.get("valuation_attractiveness") or 0
+
+    new_wt = round((bmq * 0.25 + fhr * fhr_w + mcp * 0.20 + mg * 0.20 + va * va_w) * 10, 1)
+    adj_list = scores.get("adjustments") or []
+    adj_list.append({
+        "rule":    "Leverage reweight",
+        "detail":  f"Debt/EBITDA {leverage_ratio:.1f}x — FHR weight 15%→20%, VA weight 20%→15%",
+        "penalty": round(new_wt - (scores.get("weighted_total") or 0), 1),
+    })
+    scores["weighted_total"]  = new_wt
+    scores["fhr_weight_used"] = fhr_w
+    scores["va_weight_used"]  = va_w
+    scores["adjustments"]     = adj_list
+    memo["scores"]            = scores
+    log.info(
+        f"Leveraged issuer detected ({leverage_ratio:.1f}x D/EBITDA) — "
+        f"FHR/VA reweighted, new score: {new_wt}"
+    )
+    return memo
+
+
+def apply_leverage_floor(memo: dict) -> dict:
+    """
+    Enforce hard floor on Financial Health score for highly-leveraged issuers.
+
+    Rules:
+      - GAAP-profitable + Debt/EBITDA > 4x  → FHR cannot exceed 4.0
+      - GAAP-loss + Debt/AdjEBITDA > 6x
+        AND interest_expense > 20% of revenue → FHR cannot exceed 4.0
+    Recalculates weighted_total if FHR is capped.
+    """
+    scores = memo.get("scores") or {}
+    fin    = memo.get("financials") or {}
+    fhr    = scores.get("financial_health_runway")
+    if fhr is None or fhr <= 4.0:
+        return memo  # already below floor; nothing to enforce
+
+    total_debt  = fin.get("total_debt_usd_millions") or 0
+    ebitda      = fin.get("ebitda_usd_millions")
+    net_income  = fin.get("net_income_usd_millions")
+    rev         = (fin.get("revenue_ttm_usd_millions")
+                   or (fin.get("revenue_usd_millions") or {}).get("ttm"))
+
+    if not ebitda or ebitda <= 0 or total_debt <= 0:
+        return memo
+
+    leverage_ratio = total_debt / ebitda
+    is_gaap_loss   = (net_income is not None and net_income < 0)
+    cap_triggered  = False
+
+    if not is_gaap_loss and leverage_ratio > 4.0:
+        cap_triggered = True
+    elif is_gaap_loss and leverage_ratio > 6.0:
+        # Also require interest > 20% revenue
+        interest = fin.get("interest_expense_usd_millions")
+        if interest and rev and rev > 0 and (interest / rev) > 0.20:
+            cap_triggered = True
+
+    if not cap_triggered:
+        return memo
+
+    old_fhr = fhr
+    scores["financial_health_runway"] = 4.0
+    fhr_w = scores.get("fhr_weight_used") or 0.15
+    va_w  = scores.get("va_weight_used")  or 0.20
+
+    bmq = scores.get("business_model_quality") or 0
+    mcp = scores.get("market_competitive_position") or 0
+    mg  = scores.get("management_governance") or 0
+    va  = scores.get("valuation_attractiveness") or 0
+    new_wt = round((bmq * 0.25 + 4.0 * fhr_w + mcp * 0.20 + mg * 0.20 + va * va_w) * 10, 1)
+
+    adj_list = scores.get("adjustments") or []
+    adj_list.append({
+        "rule":    "Leverage hard floor",
+        "detail":  f"FHR capped at 4.0 (was {old_fhr}); D/EBITDA {leverage_ratio:.1f}x",
+        "penalty": round(new_wt - (scores.get("weighted_total") or 0), 1),
+    })
+    scores["weighted_total"] = new_wt
+    scores["adjustments"]    = adj_list
+    memo["scores"]           = scores
+    log.info(f"Leverage hard floor applied — FHR capped {old_fhr}→4.0, new score: {new_wt}")
+    return memo
+
+
+def apply_governance_cap(memo: dict) -> dict:
+    """
+    Enforce Management & Governance score cap per ISS/Glass Lewis 2025 standards.
+
+    Cap condition (all three must be true):
+      (a) vote_ratio > 10:1 (dual-class insider vs public)
+      (b) no sunset clause
+      (c) founder voting control > 70% post-IPO
+    → Management & Governance cannot exceed 5.0
+    """
+    scores = memo.get("scores") or {}
+    mg_score = scores.get("management_governance")
+    if mg_score is None or mg_score <= 5.0:
+        return memo  # already at or below cap
+
+    ownership = memo.get("ownership") or {}
+    cap_reason = memo.get("management_governance_cap_reason") or ""
+
+    dual_class       = ownership.get("dual_class_structure") or False
+    founder_voting   = ownership.get("founder_post_ipo_voting_control_pct") or 0
+    sunset_clause    = ownership.get("dual_class_sunset_clause") or False
+
+    # Check if Opus flagged it directly
+    if cap_reason == "extreme_dual_class":
+        trigger = True
+    elif dual_class and founder_voting > 70 and not sunset_clause:
+        trigger = True
+    else:
+        trigger = False
+
+    if not trigger:
+        return memo
+
+    old_mg = mg_score
+    scores["management_governance"] = 5.0
+    fhr_w = scores.get("fhr_weight_used") or 0.15
+    va_w  = scores.get("va_weight_used")  or 0.20
+
+    bmq = scores.get("business_model_quality") or 0
+    fhr = scores.get("financial_health_runway") or 0
+    mcp = scores.get("market_competitive_position") or 0
+    va  = scores.get("valuation_attractiveness") or 0
+    new_wt = round((bmq * 0.25 + fhr * fhr_w + mcp * 0.20 + 5.0 * 0.20 + va * va_w) * 10, 1)
+
+    adj_list = scores.get("adjustments") or []
+    adj_list.append({
+        "rule":    "Governance cap",
+        "detail":  f"M&G capped at 5.0 (was {old_mg}); extreme dual-class structure",
+        "penalty": round(new_wt - (scores.get("weighted_total") or 0), 1),
+    })
+    scores["weighted_total"]             = new_wt
+    scores["adjustments"]                = adj_list
+    memo["scores"]                       = scores
+    memo["management_governance_cap_reason"] = "extreme_dual_class"
+    log.info(f"Governance cap applied — M&G capped {old_mg}→5.0, new score: {new_wt}")
+    return memo
+
+
 def apply_scoring_adjustments(memo: dict) -> dict:
     """
-    Apply post-hoc score penalties for structural risks not captured in Claude's rubric.
+    Apply post-hoc score penalties and structural overrides after Opus scoring.
 
-    RF-20 penalty: >4 underwriters on a sub-$500M deal
-                   → -1.5 pts per excess underwriter, capped at -5 pts total.
+    Steps (in order):
+      1. apply_leverage_adjustments  — reweight FHR/VA for leveraged issuers
+      2. apply_leverage_floor        — enforce FHR hard floor at 4.0
+      3. apply_governance_cap        — enforce M&G cap at 5.0 (extreme dual-class)
+      4. RF-20 syndicate spread      — -1.5 per excess underwriter, capped at -5
+      5. Re-derive recommendation    — 75/65/55 thresholds
+      6. RF-01B going concern        — AUTOMATIC PASS override (structural)
 
-    After any penalty, re-derives the recommendation against the 80/55 thresholds.
-    Appends a scores.adjustments list so the app can show the adjustment detail.
+    After all adjustments, re-derives recommendation from weighted_total.
     """
+    memo = apply_leverage_adjustments(memo)
+    memo = apply_leverage_floor(memo)
+    memo = apply_governance_cap(memo)
+
     scores = memo.get("scores") or {}
     wt = scores.get("weighted_total")
     if wt is None:
         return memo
 
-    adjustments = []
+    adjustments = list(scores.get("adjustments") or [])
     underwriters = memo.get("lead_underwriters") or []
     offering_mm  = memo.get("offering_size_usd_millions") or 0
 
@@ -2365,26 +2648,22 @@ def apply_scoring_adjustments(memo: dict) -> dict:
             "penalty": -penalty,
         })
         wt = round(wt - penalty, 1)
-
-    if adjustments:
         scores["weighted_total"] = wt
         scores["adjustments"]    = adjustments
         memo["scores"]           = scores
-        if not memo.get("going_concern"):
-            if wt >= 80:
-                memo["recommendation"] = "UNDERWRITE"
-            elif wt >= 55:
-                memo["recommendation"] = "CONDITIONAL"
-            else:
-                memo["recommendation"] = "PASS"
 
-    # RF-01 going concern: enforce AUTOMATIC PASS regardless of composite score.
-    # This runs independently of whether a syndicate penalty fired.
-    if memo.get("going_concern") and memo.get("recommendation") != "PASS":
-        log.warning(
-            f"going_concern=true but recommendation was {memo.get('recommendation')} — "
-            "forcing PASS per RF-01 automatic override"
-        )
+    # Re-derive recommendation from final weighted_total (unless going_concern overrides)
+    if not memo.get("going_concern"):
+        memo["recommendation"] = _derive_recommendation(wt)
+
+    # RF-01B structural going concern: AUTOMATIC PASS. Enforced independently.
+    gc_type = memo.get("going_concern_type") or ""
+    if memo.get("going_concern") and gc_type != "capital_deficient":
+        if memo.get("recommendation") != "PASS":
+            log.warning(
+                f"going_concern=true (type={gc_type}) but recommendation was "
+                f"{memo.get('recommendation')} — forcing PASS per RF-01B"
+            )
         memo["recommendation"] = "PASS"
 
     return memo
@@ -2480,7 +2759,7 @@ def save_daily_index(memos: list, run_date: str) -> dict:
         "run_timestamp":     datetime.now(PACIFIC).isoformat(),
         "total_filings":     len(memos),
         "underwrite_count":  sum(1 for m in memos if m.get("recommendation") == "UNDERWRITE"),
-        "conditional_count": sum(1 for m in memos if m.get("recommendation") == "CONDITIONAL"),
+        "conditional_count": sum(1 for m in memos if m.get("recommendation","").startswith("CONDITIONAL")),
         "pass_count":        sum(1 for m in memos if m.get("recommendation") == "PASS"),
         "error_count":       sum(1 for m in memos if m.get("recommendation") == "ERROR"),
         "companies": [

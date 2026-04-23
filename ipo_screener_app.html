@@ -19,6 +19,7 @@
     --green:     #2ecc8a;
     --amber:     #e8a935;
     --red:       #e05252;
+    --orange:    #e87535;
     --text:      #d8dde8;
     --text-dim:  #6b7585;
     --text-mid:  #9aa3b2;
@@ -188,6 +189,8 @@
   .badge-count { background: var(--border2); color: var(--text-mid); }
   .badge-uw    { background: rgba(46,204,138,.15); color: var(--green); }
   .badge-cond  { background: rgba(232,169,53,.15); color: var(--amber); }
+  .badge-cond-light { background: rgba(232,169,53,.15); color: var(--amber); }
+  .badge-cond-heavy { background: rgba(232,133,53,.15); color: var(--orange); }
   .badge-pass  { background: rgba(224,82,82,.12);  color: var(--red); }
   .badge-amd   { background: rgba(59,130,246,.15); color: var(--accent); }
 
@@ -389,6 +392,8 @@
   }
   .rec-UNDERWRITE { background: rgba(46,204,138,.15); color: var(--green);  border: 1px solid rgba(46,204,138,.25); }
   .rec-CONDITIONAL{ background: rgba(232,169,53,.15); color: var(--amber);  border: 1px solid rgba(232,169,53,.25); }
+  .rec-CONDITIONAL_LIGHT { background: rgba(232,169,53,.15); color: var(--amber);  border: 1px solid rgba(232,169,53,.25); }
+  .rec-CONDITIONAL_HEAVY { background: rgba(232,133,53,.15); color: var(--orange); border: 1px solid rgba(232,133,53,.30); }
   .rec-PASS       { background: rgba(224,82,82,.12);  color: var(--red);    border: 1px solid rgba(224,82,82,.2); }
   .rec-ERROR      { background: rgba(107,117,133,.15);color: var(--text-dim);border:1px solid var(--border2); }
   .rec-chip-amd {
@@ -1288,7 +1293,9 @@ function applyFilters() {
   let companies = s.companies.filter(c => {
     const matchSearch = !filterState.search || [c.company_name, c.proposed_ticker, c.sector]
       .some(v => v && v.toLowerCase().includes(filterState.search));
-    const matchRec = filterState.rec === "ALL" || c.recommendation === filterState.rec;
+    const matchRec = filterState.rec === "ALL" ||
+      (filterState.rec === "CONDITIONAL" && (c.recommendation === "CONDITIONAL" || c.recommendation === "CONDITIONAL_LIGHT" || c.recommendation === "CONDITIONAL_HEAVY")) ||
+      c.recommendation === filterState.rec;
     return matchSearch && matchRec;
   });
 
@@ -1328,7 +1335,7 @@ function renderFilingList(companies) {
           </div>
           <div class="filing-chips">
             ${amdChip}
-            <span class="rec-chip rec-${c.recommendation}">${c.recommendation || "—"}</span>
+            <span class="rec-chip rec-${c.recommendation}">${(c.recommendation || "—").replace(/_/g, " ")}</span>
             <button class="star-btn${starred ? ' starred' : ''}"
               data-file="${escAttr(c.file)}" data-date="${currentDate}"
               data-company="${escAttr(c.company_name)}" data-rec="${c.recommendation || ''}"
@@ -1389,11 +1396,12 @@ function renderMemo(m) {
   const val      = m.valuation  || {};
   const total    = scores.weighted_total;
   const recColor = m.recommendation === "UNDERWRITE" ? "var(--green)" :
-                   m.recommendation === "CONDITIONAL" ? "var(--amber)" : "var(--red)";
+                   (m.recommendation === "CONDITIONAL" || m.recommendation === "CONDITIONAL_LIGHT") ? "var(--amber)" :
+                   m.recommendation === "CONDITIONAL_HEAVY" ? "var(--orange)" : "var(--red)";
   const gaugeR    = 28;
   const gaugeC    = 2 * Math.PI * gaugeR;
   const gaugeFill = total != null ? gaugeC - (gaugeC * total / 100) : gaugeC;
-  const gaugeColor = total >= 80 ? "var(--green)" : total >= 55 ? "var(--amber)" : "var(--red)";
+  const gaugeColor = total >= 75 ? "var(--green)" : total >= 55 ? "var(--amber)" : "var(--red)";
 
   // Dimension bars
   const dims = [
@@ -1680,6 +1688,10 @@ function renderMemo(m) {
         </div>
       </div>` : "";
 
+  const leveragedBannerHtml = m.leveraged_issuer_flag
+    ? `<div class="rf-banner rf-banner-amber" style="margin-top:10px">&#x26A0; LEVERAGED ISSUER — Debt/EBITDA exceeds institutional threshold. Financial Health &amp; Runway weight increased to 20%.</div>`
+    : "";
+
   // Strip leading numbering Claude may have prepended (e.g. "1. ", "1) ")
   const stripLeadingNum = s => String(s).replace(/^\s*\d+[.):\-]\s*/, "");
 
@@ -1698,7 +1710,8 @@ function renderMemo(m) {
   // Section 03 for CONDITIONAL is intentionally blank — the 03C Conditions block below is self-evident
   const condSummaryHtml = "";
   // Standalone detailed conditions block — renders only for CONDITIONAL, placed between 03 and 04
-  const condDetailHtml = m.recommendation === "CONDITIONAL" && _conditions.length > 0
+  const _isConditional = ["CONDITIONAL","CONDITIONAL_LIGHT","CONDITIONAL_HEAVY"].includes(m.recommendation);
+  const condDetailHtml = _isConditional && _conditions.length > 0
     ? `<div class="memo-section" style="border-left:3px solid var(--amber);padding-left:16px">
         <h3 style="color:var(--amber)">Conditions for Underwriting</h3>
         <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;font-style:italic">
@@ -1822,7 +1835,7 @@ function renderMemo(m) {
           <div class="memo-ticker">${[m.proposed_ticker, m.exchange].filter(Boolean).join(" · ") || "Ticker TBD"}</div>
         </div>
         <span class="memo-rec-large rec-${m.recommendation}" style="color:${recColor};background:${recColor}18;border:1px solid ${recColor}40">
-          ${m.recommendation || "—"}
+          ${(m.recommendation || "—").replace(/_/g, " ")}
         </span>
       </div>
     </div>
@@ -2759,7 +2772,10 @@ function escAttr(s) {
 }
 
 function recColor(rec) {
-  return rec === "UNDERWRITE" ? "var(--green)" : rec === "CONDITIONAL" ? "var(--amber)" : "var(--red)";
+  if (rec === "UNDERWRITE") return "var(--green)";
+  if (rec === "CONDITIONAL" || rec === "CONDITIONAL_LIGHT") return "var(--amber)";
+  if (rec === "CONDITIONAL_HEAVY") return "var(--orange)";
+  return "var(--red)";
 }
 
 // ── safeRender: converts any value to display-safe HTML string ─────────────
@@ -2831,6 +2847,29 @@ function validateMemo(memo) {
     var v = memo[k];
     if (v != null && typeof v === "object" && !Array.isArray(v)) {
       console.info("[validateMemo] NOTE:", k, "is an object — safeRender will be applied automatically.");
+    }
+  });
+  // Dimension deduction overflow check
+  var dimMap = {
+    "business_model_quality":    "Business Model Quality",
+    "financial_health_runway":   "Financial Health & Runway",
+    "market_competitive_position": "Market & Competitive Position",
+    "management_governance":     "Management & Governance",
+    "valuation_attractiveness":  "Valuation Attractiveness"
+  };
+  var dimDeductions = {};
+  (memo.red_flags || []).forEach(function(rf) {
+    var dim = rf.affected_dimension;
+    var ded = rf.score_deduction;
+    if (dim && ded && typeof ded === "number") {
+      dimDeductions[dim] = (dimDeductions[dim] || 0) + ded;
+    }
+  });
+  Object.keys(dimDeductions).forEach(function(dim) {
+    if (dimDeductions[dim] > 10) {
+      var label = dimMap[dim] || dim;
+      console.warn("[validateMemo] DIMENSION OVERFLOW: " + label +
+        " has " + dimDeductions[dim].toFixed(1) + " pts of flag deductions — manual review required.");
     }
   });
 }
