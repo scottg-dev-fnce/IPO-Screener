@@ -233,3 +233,20 @@ python3 fetch_only.py                # Fetch only, no analysis
 python3 -m http.server 8765          # Serve the app
 pip install anthropic requests beautifulsoup4 yfinance  # Dependencies
 ```
+
+## AUTO-BACKUP RULE
+
+At the end of any session where one or more of these files were modified:
+- `ipo_screener.py`
+- `ipo_screener_app.html`
+- `fetch_only.py`
+- `save_memos.py`
+
+You MUST run the following before closing out:
+```bash
+cd ~/IPO_Screener && git add -A && git commit -m "auto-backup" && git push
+```
+
+Do this automatically — do not ask for confirmation. The `memos/` folder is excluded
+by `.gitignore` so it will never be committed. Run this even if the session ends
+mid-task or after a partial change.
