@@ -2438,6 +2438,141 @@ def save_daily_index(memos: list, run_date: str) -> dict:
 
 
 # ─────────────────────────────────────────────
+# PDF QUALITY VALIDATION
+# ─────────────────────────────────────────────
+
+def validate_pdf_output(memo: dict) -> list:
+    """
+    Validate a memo dict for issues that would cause PDF rendering problems.
+    Checks run against the JSON structure; issues map to the section numbers
+    shown in the rendered PDF.
+
+    Returns a list of issue strings, each prefixed with its section number.
+    """
+    issues = []
+
+    # ── helpers ────────────────────────────────────────────────────────────
+    _EMPTY_STRINGS = {"", "—", "-", "not available", "not available.",
+                      "no data available", "n/a", "null", "none", "tbd"}
+
+    def is_empty(val):
+        if val is None:
+            return True
+        if isinstance(val, str):
+            return val.strip().lower() in _EMPTY_STRINGS
+        if isinstance(val, (list, dict)):
+            return len(val) == 0
+        return False
+
+    def _scan_object_object(val, path):
+        """Recursively find any string that looks like a leaked JS object."""
+        found = []
+        if isinstance(val, str):
+            stripped = val.strip().lower()
+            if "[object object]" in stripped or stripped.startswith("[object"):
+                found.append(f"{path}: \"{val[:80]}\"")
+        elif isinstance(val, dict):
+            for k, v in val.items():
+                found.extend(_scan_object_object(v, f"{path}.{k}"))
+        elif isinstance(val, list):
+            for i, v in enumerate(val):
+                found.extend(_scan_object_object(v, f"{path}[{i}]"))
+        return found
+
+    def _field_is_narrative_but_dict(field_name, val):
+        """Flag narrative fields that are dicts instead of strings (schema mismatch)."""
+        narrative_fields = {
+            "executive_summary", "deal_committee_recommendation",
+            "deal_committee_narrative", "business_overview",
+            "key_risk_narrative", "macro_sector_context",
+            "proceeds_narrative", "accounting_quality_summary",
+        }
+        return field_name in narrative_fields and isinstance(val, dict)
+
+    # ── Check 1: Sections with no renderable content ───────────────────────
+    section_checks = [
+        ("Cover", "Executive Summary",          memo.get("executive_summary")),
+        ("01",    "Deal Committee Rec.",         memo.get("deal_committee_recommendation")
+                                                 or memo.get("deal_committee_narrative")),
+        ("02",    "Business Overview",           memo.get("business_overview")),
+        ("04",    "Risk & Red Flags",            memo.get("red_flags")),
+        ("05",    "Litigation",                  (memo.get("litigation_regulatory") or {})
+                                                 .get("litigation_risk_level")
+                                                 or (memo.get("litigation_regulatory") or {})
+                                                 .get("litigation_summary")),
+        ("06",    "Financial Snapshot",          memo.get("financials")),
+        ("07",    "Use of Proceeds",             memo.get("use_of_proceeds")),
+        ("08",    "Valuation Analysis",          memo.get("valuation")),
+        ("09",    "Revenue Quality",             memo.get("revenue_quality")),
+        ("12",    "Macro & Sector Context",      memo.get("macro_sector_context")),
+        ("13",    "Underwriting Syndicate",      memo.get("lead_underwriters")),
+        ("18",    "Accounting Practices",        memo.get("accounting_practices")),
+        ("19",    "ESG Disclosure",              memo.get("esg_disclosure")),
+    ]
+    for sec, label, val in section_checks:
+        if is_empty(val):
+            issues.append(f"Section {sec} ({label}): no content — will render empty or 'Not available'")
+
+    # ── Check 2: [object Object] anywhere in memo ──────────────────────────
+    for hit in _scan_object_object(memo, "memo"):
+        issues.append(f"[object Object] at {hit}")
+
+    # Also flag narrative fields that are dicts instead of strings
+    for k, v in memo.items():
+        if _field_is_narrative_but_dict(k, v):
+            issues.append(f"Field '{k}' is a dict but should be a string — will render as [object Object]")
+
+    # ── Check 3: Critical fields null or empty ─────────────────────────────
+    fin = memo.get("financials") or {}
+    rev = fin.get("revenue_usd_millions") or {}
+    if rev.get("ttm") is None and rev.get("year_minus_1") is None:
+        issues.append("Section 06 (Financial Snapshot): all revenue fields null — table will be blank")
+    if fin.get("gross_margin_pct") is None:
+        issues.append("Section 06 (Financial Snapshot): gross_margin_pct null")
+    if is_empty(memo.get("recommendation")):
+        issues.append("CRITICAL: recommendation field empty — cover badge will be blank")
+    if is_empty(memo.get("deal_committee_recommendation")
+                or memo.get("deal_committee_narrative")):
+        issues.append("Section 01 (Deal Committee Rec.): narrative empty — section will show 'Not available'")
+
+    # ── Check 4: Part divider targets must have content ────────────────────
+    # Part dividers are injected immediately before these sections; if the
+    # section has no content the PDF shows a part label with nothing below it.
+    part_targets = [
+        ("04", "Part II  (Risk Assessment)",            memo.get("red_flags")),
+        ("06", "Part III (Business & Financial)",       memo.get("financials")),
+        ("13", "Part IV  (Deal Structure & Diligence)", memo.get("lead_underwriters")),
+        ("19", "Part V   (ESG)",                        memo.get("esg_disclosure")),
+    ]
+    for sec, part_label, val in part_targets:
+        if is_empty(val):
+            issues.append(
+                f"Section {sec} triggers {part_label} divider but has no content — "
+                f"likely blank page in PDF"
+            )
+
+    return issues
+
+
+def _print_pdf_quality_report(company: str, issues: list) -> None:
+    """Print the PDF quality check summary and log all issues."""
+    count = len(issues)
+    bar = "-" * 55
+    print(f"\n  {bar}")
+    print(f"  PDF QUALITY CHECK: {count} issue{'s' if count != 1 else ''} found  [{company}]")
+    if issues:
+        for issue in issues:
+            print(f"    ⚠  {issue}")
+            log.warning(f"PDF quality [{company}]: {issue}")
+    else:
+        print(f"    ✓  No rendering issues detected.")
+    if count > 3:
+        print(f"\n  !! WARNING — memo has significant rendering gaps, review before sending to MD.")
+        log.warning(f"[{company}] SIGNIFICANT PDF QUALITY WARNING: {count} issues found.")
+    print(f"  {bar}")
+
+
+# ─────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────
 
@@ -2474,6 +2609,8 @@ def main() -> None:
         memo = analyze_filing(client, filing)
         memos.append(memo)
         save_memo(memo, run_date)
+        issues = validate_pdf_output(memo)
+        _print_pdf_quality_report(memo.get("company_name", filing["company"]), issues)
         time.sleep(2)  # rate limiting between filings
 
     index = save_daily_index(memos, run_date)

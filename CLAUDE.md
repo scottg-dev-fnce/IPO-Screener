@@ -283,6 +283,33 @@ python3 -m http.server 8765          # Serve the app
 pip install anthropic requests beautifulsoup4 yfinance  # Dependencies
 ```
 
+## PDF QUALITY CHECK (MANDATORY)
+
+After every memo generation run, `validate_pdf_output()` runs automatically and prints
+a report to stdout. This is non-optional — do not remove or skip this step.
+
+### What it checks
+1. **Empty sections** — any of the 13 key memo sections has no renderable content
+2. **[object Object] risk** — any field value is a dict/object where a string is expected
+3. **Critical fields** — `revenue_ttm_usd_millions`, `gross_margin_pct`, `recommendation`,
+   and `deal_committee_recommendation` are null/empty
+4. **Part divider targets** — sections 04, 06, 13, and 19 exist and are non-empty
+   (these are the sections immediately following Part dividers in the PDF)
+
+### Output format
+```
+PDF QUALITY CHECK: X issues found [Company Name]
+  ⚠ issue description
+  ⚠ issue description
+  ...
+⚠⚠ WARNING: 4+ issues found — memo may render poorly in PDF. Review before distributing.
+```
+
+### When issues are found
+- Fix the underlying JSON memo fields before distributing the PDF
+- If a critical field is missing, re-run analysis or patch the memo manually
+- Score ≤5 in `accounting_quality_score` also triggers RF-25 — verify `rf25_triggered` is set
+
 ## AUTO-BACKUP RULE
 
 At the end of any session where one or more of these files were modified:
