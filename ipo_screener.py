@@ -293,6 +293,15 @@ Analyze the following from the filing text provided:
     - Set rf25_triggered to true if accounting_quality_score <= 5.
     - Populate accounting_quality_summary with a 2–3 sentence plain-English paragraph
       an underwriter should take away from the accounting review.
+    - CRITICAL: Populate the `items` array in `accounting_practices` with one object per
+      dimension (8 total). Each object MUST have these exact keys:
+        "category"       — human-readable name (e.g. "Revenue Recognition")
+        "key"            — snake_case key matching the dimension name
+        "description"    — what the company does (1-3 sentences from the filing)
+        "assessment"     — whether it is standard or aggressive vs. sector norms
+        "earnings_impact"— effect on reported earnings or balance sheet
+        "risk_rating"    — exactly one of: Conservative / Standard / Aggressive / Highly Aggressive
+      Do NOT output the 8 dimensions as top-level named keys — they MUST be inside items[].
 
 [S] ESG DISCLOSURE SCORE  (Bloomberg Disclosure Methodology — scored 0–100)
     - Score what the S-1 DISCLOSES, not what the company has achieved. A company
@@ -525,6 +534,13 @@ RECOMMENDATION THRESHOLDS:
   <55   -> PASS          -- Document primary reasons
   RF-01 -> AUTOMATIC PASS regardless of score
 
+DEAL COMMITTEE NARRATIVE:
+  Populate the `deal_committee_recommendation` field with 2-3 sentences in institutional
+  ECM language summarizing the recommendation rationale for a deal committee audience.
+  Lead with the recommendation (UNDERWRITE / CONDITIONAL / PASS), state the primary
+  driver (e.g., valuation, financial health, governance), and note the single most
+  important risk or condition. This field is required — do not leave it empty.
+
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 OUTPUT FORMAT -- RETURN AS VALID JSON ONLY
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
@@ -728,7 +744,7 @@ Use this exact schema:
   "key_risk_narrative": "",
   "related_party_flags": [],
   "macro_sector_context": "",
-  "deal_committee_narrative": "",
+  "deal_committee_recommendation": "",
 
   "accounting_practices": {
     "items": [

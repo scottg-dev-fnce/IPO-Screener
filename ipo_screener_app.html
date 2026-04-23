@@ -735,9 +735,12 @@
     .memo-tabs { display: none !important; }
     .score-gauge-row { page-break-before: always; break-before: page; }
     .memo-section { page-break-inside: avoid; }
-    /* Suppress browser UA list-item counters in print */
-    ol, ul { list-style: none !important; padding-left: 0 !important; }
-    li::marker { content: none !important; }
+    /* Suppress browser UA ordered-list counters in print */
+    ol { list-style: none !important; padding-left: 0 !important; }
+    /* Restore bullet lists inside section content */
+    #memo-panel .memo-section ul { list-style: disc !important; padding-left: 18px !important; }
+    #memo-panel .memo-section ul li { list-style: disc !important; color: #333 !important; }
+    #memo-panel .memo-section ul li::marker { color: #555 !important; }
     .no-print { display: none !important; }
     /* ── Section breathing room ── */
     #memo-panel .memo-section { margin-top: 40px; }
@@ -763,6 +766,10 @@
     #memo-panel .acct-table td:nth-child(3) { width: 17%; }
     #memo-panel .acct-table td:nth-child(4) { width: 16%; }
     #memo-panel .acct-table td { font-size: 10px; word-wrap: break-word; }
+    /* Bug 4 — expand Aggressive/Highly Aggressive rows in PDF; collapse others */
+    .acct-detail-row { display: none !important; }
+    .acct-detail-row.acct-detail-print-open { display: table-row !important; }
+    .acct-hint { display: none !important; }
     /* Fix 3 — flag table shown in print; flag list + narrative hidden */
     .flag-list, .key-risk-narrative { display: none !important; }
     .pdf-flag-table { display: table; width: 100%; border-collapse: collapse; margin-top: 8px; }
@@ -1804,7 +1811,7 @@ function renderMemo(m) {
 
       <div class="memo-section">
         <h3><span class="section-num">02</span> Deal Committee Recommendation</h3>
-        <div class="committee-block">${m.deal_committee_narrative || "Not available."}</div>
+        <div class="committee-block">${m.deal_committee_recommendation || m.deal_committee_narrative || "Not available."}</div>
       </div>
 
       ${condHtml}
@@ -2192,7 +2199,31 @@ function buildSection16(m) {
   if (!ap) return "";
 
   const score = ap.accounting_quality_score;
-  const items = ap.items || [];
+  // Opus may populate named keys directly instead of items[]; build items from them if needed
+  let items = (ap.items && ap.items.length > 0) ? ap.items : (function() {
+    const namedKeys = [
+      ['revenue_recognition',      'Revenue Recognition'],
+      ['cost_capitalization',      'Cost Capitalization'],
+      ['lease_classification',     'Lease Classification'],
+      ['goodwill_impairment',      'Goodwill & Intangible Impairment'],
+      ['depreciation_amortization','Depreciation & Amortization'],
+      ['pension_obligations',      'Pension & Benefit Obligations'],
+      ['non_gaap_metrics',         'Non-GAAP Metrics'],
+      ['related_party_disclosures','Related Party Disclosures'],
+    ];
+    return namedKeys.map(function(pair) {
+      var key = pair[0], label = pair[1], v = ap[key];
+      if (!v || typeof v !== 'object') return null;
+      return {
+        category:       label,
+        key:            key,
+        description:    v.method      || v.description || "",
+        assessment:     v.notes       || v.assessment  || "",
+        earnings_impact: v.earnings_impact || "",
+        risk_rating:    v.rating      || v.risk_rating || ""
+      };
+    }).filter(Boolean);
+  })();
 
   const scoreCls = score == null ? "acct-score-mid"
                  : score >= 8    ? "acct-score-high"
@@ -2254,8 +2285,10 @@ function buildSection16(m) {
           <td><span class="acct-toggle">${hasDetail ? "&#9654;" : ""}</span>${it.category || it.key || "—"}</td>
           <td>${ratingBadge(it.risk_rating)}</td>
         </tr>`;
+        const ratingKey = (it.risk_rating || "").toLowerCase().replace(/[\s-]+/g, "");
+        const isPrintOpen = ratingKey === "aggressive" || ratingKey.startsWith("highly");
         const detailRow = hasDetail
-          ? `<tr class="acct-detail-row" id="${rowId}">
+          ? `<tr class="acct-detail-row${isPrintOpen ? " acct-detail-print-open" : ""}" id="${rowId}">
               <td colspan="2"><div class="acct-detail-body">${detailParts.join("")}</div></td>
             </tr>`
           : "";
