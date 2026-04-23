@@ -82,32 +82,32 @@ and renders them in a browser-based app with PDF export.
 
 ## MEMO SECTION ORDER (renderMemo + exportPDF)
 
-01 Executive Summary
-02 Deal Committee Recommendation
-03 Recommendation Summary — brief one-line statement for all three rec types:
+COVER PAGE — Executive Summary (no section number; part of cover page)
+01 Deal Committee Recommendation
+02 Business Overview
+03 Recommendation Summary — brief statement for UNDERWRITE and PASS only:
      UNDERWRITE: enumerated underwrite_reasons[]
-     CONDITIONAL: "X conditions must be satisfied before this deal can proceed" (no list)
+     CONDITIONAL: no Section 03 — the 03C block is self-evident
      PASS: enumerated pass_reasons[]
 [03C] Conditions for Underwriting — CONDITIONAL only, no section number badge.
      Full numbered actionable conditions list. Rendered between 03 and 04.
      Styled with amber left border to distinguish from numbered sections.
 04 Risk & Red Flags
 05 Litigation, Regulatory & Related Party Exposure
-06 Business Overview
-07 Financial Snapshot (+ Segment Breakdown if 2+ segments)
-08 Use of Proceeds
-09 Valuation Analysis (+ SOTP if 2+ segments; Damodaran benchmarks at bottom)
-10 Revenue Quality
-11 Source Verification
-12 Management & Board
-13 Macro & Sector Context
-14 Underwriting Syndicate
-15 Lockup & Insider Selling
-16 Syndicate Quality
-17 Comparable IPO Performance
-18 Auditor Quality
-19 Accounting Practices
-20 ESG Disclosure Score
+06 Financial Snapshot (+ Segment Breakdown if 2+ segments)
+07 Use of Proceeds
+08 Valuation Analysis (+ SOTP if 2+ segments; Damodaran benchmarks at bottom)
+09 Revenue Quality
+10 Source Verification
+11 Management & Board
+12 Macro & Sector Context
+13 Underwriting Syndicate
+14 Lockup & Insider Selling
+15 Syndicate Quality
+16 Comparable IPO Performance
+17 Auditor Quality
+18 Accounting Practices
+19 ESG Disclosure Score
 
 ## PDF EXPORT RULES
 
@@ -115,8 +115,8 @@ and renders them in a browser-based app with PDF export.
 - PART I — RECOMMENDATION: before section 01
 - PART II — RISK ASSESSMENT: before section 04
 - PART III — BUSINESS & FINANCIAL ANALYSIS: before section 06
-- PART IV — DEAL STRUCTURE & DILIGENCE: before section 14
-- PART V — ESG: before section 20
+- PART IV — DEAL STRUCTURE & DILIGENCE: before section 13
+- PART V — ESG: before section 19
 - Format: thick 3px gold rule + part title in small caps, single line,
   no page break
 

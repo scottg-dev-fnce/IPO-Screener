@@ -512,6 +512,19 @@
   }
   .flag-text { font-size: 11px; color: var(--text-mid); line-height: 1.5; }
 
+  /* Cover page executive summary block */
+  .cover-exec-summary {
+    margin-top: 20px;
+    padding: 16px 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .cover-exec-label {
+    font-size: 10px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+  }
+
   /* Amendment banner */
   .amendment-banner {
     display: flex; align-items: flex-start; gap: 12px;
@@ -733,8 +746,23 @@
       flex: none !important;
     }
     .memo-tabs { display: none !important; }
-    .score-gauge-row { page-break-before: always; break-before: page; }
+    /* Cover page ends after memo-header-wrap; sections start on page 2 */
+    .memo-header-wrap { page-break-after: always; break-after: page; }
+    .score-gauge-row { page-break-before: auto; break-before: auto; }
     .memo-section { page-break-inside: avoid; }
+    /* Cover exec summary — light border in print */
+    .cover-exec-summary { background: #f7f6f4 !important; border-color: #ccc !important; }
+    .cover-exec-label { color: #666 !important; }
+    /* Use of Proceeds bar — force colors and layout for print */
+    .proceeds-bar-wrap { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 12px 0 8px; }
+    .proceeds-bar { display: flex !important; height: 20px !important; overflow: hidden !important; width: 100% !important; border-radius: 3px !important; }
+    .pbar-seg { height: 100% !important; display: block !important; }
+    .pbar-growth  { background: #1a7a4e !important; }
+    .pbar-debt    { background: #9a6a00 !important; }
+    .pbar-sponsor { background: #c05a34 !important; }
+    .pbar-insider { background: #a02020 !important; }
+    .pbar-general { background: #555 !important; }
+    .proceeds-legend { display: flex !important; flex-wrap: wrap !important; }
     /* Suppress browser UA ordered-list counters in print */
     ol { list-style: none !important; padding-left: 0 !important; }
     /* Restore bullet lists inside section content */
@@ -1526,7 +1554,7 @@ function renderMemo(m) {
       </tbody>
     </table>` : "";
   const valSection = `<div class="memo-section">
-    <h3><span class="section-num">09</span> Valuation Analysis ${liveFlag}${damFlag}</h3>
+    <h3><span class="section-num">08</span> Valuation Analysis ${liveFlag}${damFlag}</h3>
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
       <tbody>
@@ -1659,13 +1687,8 @@ function renderMemo(m) {
       </div>` : "";
   // CONDITIONAL: support both 'conditions' and 'conditional_underwrite_conditions' field names
   const _conditions = m.conditions || m.conditional_underwrite_conditions || [];
-  const condSummaryHtml = m.recommendation === "CONDITIONAL"
-    ? `<div class="memo-section">
-        <h3><span class="section-num">03</span> Conditions for Underwriting</h3>
-        <p class="memo-prose" style="color:var(--amber)">
-          ${_conditions.length} condition${_conditions.length !== 1 ? "s" : ""} must be satisfied before this deal can proceed to the deal committee. See the Conditions for Underwriting section below.
-        </p>
-      </div>` : "";
+  // Section 03 for CONDITIONAL is intentionally blank — the 03C Conditions block below is self-evident
+  const condSummaryHtml = "";
   // Standalone detailed conditions block — renders only for CONDITIONAL, placed between 03 and 04
   const condDetailHtml = m.recommendation === "CONDITIONAL" && _conditions.length > 0
     ? `<div class="memo-section" style="border-left:3px solid var(--amber);padding-left:16px">
@@ -1717,8 +1740,26 @@ function renderMemo(m) {
   // Detect if we have the new breakdown array schema
   const _breakdown = Array.isArray(uop.breakdown) ? uop.breakdown : [];
   const _hasBarData = cats.some(c => uop[c.key] != null && uop[c.key] > 0);
-  // Build breakdown table for new schema (array of {purpose, amount_usd_millions, pct_of_proceeds})
-  const breakdownTable = _breakdown.length > 0 && !_hasBarData ? `
+  // Detailed table from pct-field schema — always shown below the bar when available
+  const pctTable = _hasBarData ? `
+    <table class="fin-table" style="margin-top:12px">
+      <thead><tr>
+        <th>Purpose</th>
+        <th style="text-align:right">% of Proceeds</th>
+        ${offerMM != null ? `<th style="text-align:right">Est. Amount</th>` : ""}
+      </tr></thead>
+      <tbody>${cats.filter(c => (uop[c.key] || 0) > 0).map(c => {
+        const pct = uop[c.key];
+        const amt = offerMM != null ? `$${(offerMM * pct / 100).toFixed(0)}M` : "";
+        return `<tr>
+          <td class="label-col"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.col};margin-right:6px;vertical-align:middle"></span>${c.name}</td>
+          <td class="val-col">${pct.toFixed(0)}%</td>
+          ${offerMM != null ? `<td class="val-col">${amt}</td>` : ""}
+        </tr>`;
+      }).join("")}</tbody>
+    </table>` : "";
+  // Detailed table from breakdown-array schema — always shown (not gated on _hasBarData)
+  const breakdownTable = _breakdown.length > 0 ? `
     <table class="fin-table" style="margin-top:8px">
       <thead><tr>
         <th>Purpose</th>
@@ -1757,8 +1798,9 @@ function renderMemo(m) {
       <div class="proceeds-bar-wrap">
         <div class="proceeds-bar">${barSegs}</div>
         <div class="proceeds-legend">${legendItems}</div>
-      </div>` : ""}
-    ${breakdownTable}
+      </div>
+      ${pctTable}` : ""}
+    ${_breakdown.length > 0 ? breakdownTable : ""}
     ${!_hasAnyProceeds ? missingDataFlag("Use of Proceeds") : ""}
     ${uop.proceeds_narrative ? `<p class="proceeds-narrative">${uop.proceeds_narrative}</p>` : ""}
   `;
@@ -1775,13 +1817,6 @@ function renderMemo(m) {
           ${m.recommendation || "—"}
         </span>
       </div>
-      <div class="memo-header-meta">
-        <div class="meta-item"><div class="meta-lbl">Sector</div><div class="meta-val">${m.sector || "—"}</div></div>
-        <div class="meta-item"><div class="meta-lbl">Offering</div><div class="meta-val">${m.offering_size_usd_millions != null ? "$"+m.offering_size_usd_millions+"M" : "—"}</div></div>
-        <div class="meta-item"><div class="meta-lbl">Price Range</div><div class="meta-val">${m.proposed_price_range || "—"}</div></div>
-        <div class="meta-item"><div class="meta-lbl">Auditor</div><div class="meta-val" style="${m.auditor_flag ? 'color:var(--amber)' : ''}">${m.auditor || "—"}</div></div>
-        <div class="meta-item"><div class="meta-lbl">Filed</div><div class="meta-val">${m.filing_date || "—"}</div></div>
-      </div>
     </div>
 
     <div class="score-gauge-row">
@@ -1796,22 +1831,58 @@ function renderMemo(m) {
       <div class="score-dimensions">${dimBars}</div>
     </div>
     ${adjNote}
+
+    <div class="memo-header-meta">
+      <div class="meta-item"><div class="meta-lbl">Sector</div><div class="meta-val">${m.sector || "—"}</div></div>
+      <div class="meta-item"><div class="meta-lbl">Offering</div><div class="meta-val">${m.offering_size_usd_millions != null ? "$"+m.offering_size_usd_millions+"M" : "—"}</div></div>
+      <div class="meta-item"><div class="meta-lbl">Price Range</div><div class="meta-val">${m.proposed_price_range || "—"}</div></div>
+      <div class="meta-item"><div class="meta-lbl">Auditor</div><div class="meta-val" style="${m.auditor_flag ? 'color:var(--amber)' : ''}">${m.auditor || "—"}</div></div>
+      <div class="meta-item"><div class="meta-lbl">Filed</div><div class="meta-val">${m.filing_date || "—"}</div></div>
+    </div>
+
+    ${amendmentHtml}
+
+    ${m.executive_summary ? `<div class="cover-exec-summary">
+      <p class="cover-exec-label">Executive Summary</p>
+      <p class="memo-prose">${m.executive_summary}</p>
+    </div>` : ""}
   `;
 
   document.getElementById("memo-panel").innerHTML = `
     <div class="memo-header-wrap">${sharedHeader}</div>
 
     <div id="memo-tab-0" class="memo-tab-panel">
-      ${amendmentHtml}
 
       <div class="memo-section">
-        <h3><span class="section-num">01</span> Executive Summary</h3>
-        <p class="memo-prose">${m.executive_summary || "Not available."}</p>
+        <h3><span class="section-num">01</span> Deal Committee Recommendation</h3>
+        <div class="committee-block">${m.deal_committee_recommendation || m.deal_committee_narrative || "Not available."}</div>
       </div>
 
       <div class="memo-section">
-        <h3><span class="section-num">02</span> Deal Committee Recommendation</h3>
-        <div class="committee-block">${m.deal_committee_recommendation || m.deal_committee_narrative || "Not available."}</div>
+        <h3><span class="section-num">02</span> Business Overview</h3>
+        ${(() => {
+          const bo = m.business_overview;
+          if (!bo) return missingDataFlag("Business Overview");
+          if (typeof bo === "string") return `<p class="memo-prose">${bo}</p>`;
+          const desc = bo.description || bo.overview || bo.summary || "";
+          const products = (bo.key_products  || []).filter(Boolean);
+          const advtgs   = (bo.competitive_advantages || []).filter(Boolean);
+          const risks    = (bo.key_risks || []).filter(Boolean);
+          const bizModel = bo.business_model || "";
+          const meta = [
+            bo.founded      ? `Founded: ${bo.founded}` : "",
+            bo.headquarters ? `HQ: ${bo.headquarters}` : "",
+            bo.employees    ? `Employees: ${bo.employees.toLocaleString()}` : "",
+          ].filter(Boolean).join(" &nbsp;·&nbsp; ");
+          return [
+            meta ? `<p style="font-size:11px;color:var(--text-dim);margin-bottom:10px">${meta}</p>` : "",
+            desc ? `<p class="memo-prose">${desc}</p>` : "",
+            bizModel ? `<p class="memo-prose" style="margin-top:8px"><strong>Business Model:</strong> ${bizModel}</p>` : "",
+            products.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Key Products &amp; Services</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${products.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+            advtgs.length   ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Competitive Advantages</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${advtgs.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+            risks.length    ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Key Risks</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--amber);line-height:1.8">${risks.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
+          ].join("");
+        })()}
       </div>
 
       ${condHtml}
@@ -1827,41 +1898,12 @@ function renderMemo(m) {
       ${buildSection15(m)}
 
       <div class="memo-section">
-        <h3><span class="section-num">06</span> Business Overview</h3>
-        ${(() => {
-          const bo = m.business_overview;
-          if (!bo) return missingDataFlag("Business Overview");
-          // String: render directly
-          if (typeof bo === "string") return `<p class="memo-prose">${bo}</p>`;
-          // Object: render description + structured lists
-          const desc = bo.description || bo.overview || bo.summary || "";
-          const products  = (bo.key_products  || []).filter(Boolean);
-          const advtgs    = (bo.competitive_advantages || []).filter(Boolean);
-          const risks     = (bo.key_risks || []).filter(Boolean);
-          const bizModel  = bo.business_model || "";
-          const meta = [
-            bo.founded       ? `Founded: ${bo.founded}` : "",
-            bo.headquarters  ? `HQ: ${bo.headquarters}` : "",
-            bo.employees     ? `Employees: ${bo.employees.toLocaleString()}` : "",
-          ].filter(Boolean).join(" &nbsp;·&nbsp; ");
-          return [
-            meta ? `<p style="font-size:11px;color:var(--text-dim);margin-bottom:10px">${meta}</p>` : "",
-            desc ? `<p class="memo-prose">${desc}</p>` : "",
-            bizModel ? `<p class="memo-prose" style="margin-top:8px"><strong>Business Model:</strong> ${bizModel}</p>` : "",
-            products.length ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Key Products &amp; Services</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${products.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
-            advtgs.length  ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Competitive Advantages</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--text-mid);line-height:1.8">${advtgs.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
-            risks.length   ? `<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 4px">Key Risks</p><ul style="margin:0 0 8px 18px;font-size:12px;color:var(--amber);line-height:1.8">${risks.map(x=>`<li>${x}</li>`).join("")}</ul>` : "",
-          ].join("");
-        })()}
-      </div>
-
-      <div class="memo-section">
-        <h3><span class="section-num">07</span> Financial Snapshot</h3>
+        <h3><span class="section-num">06</span> Financial Snapshot</h3>
         ${finTable}
       </div>
 
       <div class="memo-section">
-        <h3><span class="section-num">08</span> Use of Proceeds</h3>
+        <h3><span class="section-num">07</span> Use of Proceeds</h3>
         ${proceedsContent}
       </div>
 
@@ -1873,7 +1915,7 @@ function renderMemo(m) {
       ${buildSectionManagement(m)}
 
       ${m.macro_sector_context ? `<div class="memo-section">
-        <h3><span class="section-num">13</span> Macro &amp; Sector Context</h3>
+        <h3><span class="section-num">12</span> Macro &amp; Sector Context</h3>
         ${(() => {
           const mc = m.macro_sector_context;
           if (typeof mc === "string") return `<p class="memo-prose">${mc}</p>`;
@@ -1900,14 +1942,14 @@ function renderMemo(m) {
           ? `<p style="font-size:11px;color:var(--text-dim);margin-top:8px">Total underwriters named: <strong style="color:var(--text)">${sa.underwriter_count}</strong></p>`
           : "";
         return `<div class="memo-section">
-          <h3><span class="section-num">14</span> Underwriting Syndicate</h3>
+          <h3><span class="section-num">13</span> Underwriting Syndicate</h3>
           <p class="memo-prose">${m.lead_underwriters.join(" · ")} &nbsp;—&nbsp; ${m.underwriter_tier || ""} &nbsp;·&nbsp; ${m.ipo_type || ""}</p>
           ${uwCount}${spreadBanner}
         </div>`;
       })() : ""}
 
-      ${buildSection11(m)}
       ${buildSection10(m)}
+      ${buildSection11(m)}
       ${buildSection12(m)}
       ${buildSection13(m)}
       ${buildSection16(m)}
@@ -1941,7 +1983,7 @@ function buildSectionSourceVerification(m) {
       <td style="padding-top:10px;font-size:12px;color:var(--text-mid);line-height:1.7">${items.map(s => escAttr(s)).join("<br>")}</td>
     </tr>` : "";
   return `<div class="memo-section">
-    <h3><span class="section-num">11</span> Source Verification</h3>
+    <h3><span class="section-num">10</span> Source Verification</h3>
     <table class="fin-table">
       <thead><tr><th>Tier</th><th>Sources Cited</th></tr></thead>
       <tbody>
@@ -1983,7 +2025,7 @@ function buildSectionManagement(m) {
         `<div class="flag-entry"><span class="flag-code">MGT</span><span class="flag-text">${escAttr(String(f))}</span></div>`
       ).join("")}</div>` : "";
   return `<div class="memo-section">
-    <h3><span class="section-num">12</span> Management &amp; Board</h3>
+    <h3><span class="section-num">11</span> Management &amp; Board</h3>
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -2008,7 +2050,7 @@ function buildSection10(m) {
     ["Secondary % of Offering",   la.secondary_shares_pct_offering != null ? `${la.secondary_shares_pct_offering.toFixed(1)}%` : "&mdash;"],
   ];
   return `<div class="memo-section">
-    <h3><span class="section-num">15</span> Lockup &amp; Insider Selling</h3>
+    <h3><span class="section-num">14</span> Lockup &amp; Insider Selling</h3>
     ${rf23}
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
@@ -2027,7 +2069,7 @@ function buildSection11(m) {
     ? `<div class="rf-banner rf-banner-amber">&#x2691; RF-20 UPGRADE &mdash; ${sq.rf20_tier3_reason || "Tier 3 lead bookrunner on a deal >$100M."}</div>`
     : "";
   return `<div class="memo-section">
-    <h3><span class="section-num">16</span> Syndicate Quality</h3>
+    <h3><span class="section-num">15</span> Syndicate Quality</h3>
     ${rf20}
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
@@ -2104,7 +2146,7 @@ function buildSection12(m) {
     </div>` : "";
 
   return `<div class="memo-section">
-    <h3><span class="section-num">17</span> Comparable IPO Performance</h3>
+    <h3><span class="section-num">16</span> Comparable IPO Performance</h3>
     ${tableBlock}
     ${narrativeBlock}
   </div>`;
@@ -2122,7 +2164,7 @@ function buildSection13(m) {
     ? `<div class="rf-banner rf-banner-red">&#x2691; RF-24 AUDITOR QUALITY RISK &mdash; ${aa.rf24_reason || "Non-Big 4 / non-recognized mid-tier auditor on a deal >$50M."}</div>`
     : "";
   return `<div class="memo-section">
-    <h3><span class="section-num">18</span> Auditor Quality</h3>
+    <h3><span class="section-num">17</span> Auditor Quality</h3>
     ${rf24}
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
@@ -2151,7 +2193,7 @@ function buildSection14(m) {
                        (rev.year_minus_1 === 0 || rev.year_minus_1 == null) &&
                        (rating === "n/a" || rq.recurring_vs_nonrecurring === "N/A — pre-revenue");
   return `<div class="memo-section${isPreRevenue ? " no-print" : ""}">
-    <h3><span class="section-num">10</span> Revenue Quality</h3>
+    <h3><span class="section-num">09</span> Revenue Quality</h3>
     <table class="fin-table" style="margin-bottom:12px">
       <thead><tr><th>Dimension</th><th style="text-align:right">Assessment</th></tr></thead>
       <tbody>${rows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
@@ -2297,7 +2339,7 @@ function buildSection16(m) {
     : `<tr><td colspan="2" style="color:var(--text-dim);font-style:italic;padding:12px 10px">No accounting items available.</td></tr>`;
 
   return `<div class="memo-section">
-    <h3><span class="section-num">19</span> Accounting Practices</h3>
+    <h3><span class="section-num">18</span> Accounting Practices</h3>
     ${rf25Banner}
     ${scoreBlock}
     ${preRevenueNote}
@@ -2370,7 +2412,7 @@ function buildSection17(m) {
   };
 
   return `<div class="memo-section">
-    <h3><span class="section-num">20</span> ESG Disclosure Score</h3>
+    <h3><span class="section-num">19</span> ESG Disclosure Score</h3>
     ${compositeBlock}
     <div class="esg-pillars">
       ${pillarCard("E", "Environmental", "30%", E)}
