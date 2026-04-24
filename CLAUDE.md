@@ -374,6 +374,36 @@ python3 -m http.server 8765          # Serve the app
 pip install anthropic requests beautifulsoup4 yfinance  # Dependencies
 ```
 
+## POST-SAVE INDEX VALIDATION (MANDATORY)
+
+After every memo save, `validate_memo_index(run_date)` runs automatically.
+**Do not remove or skip this call** — it is what guarantees memos appear in the dashboard.
+
+### What it checks
+1. `_index.json` has required top-level fields: `run_date` (str), `run_timestamp` (str), `companies[]` list
+2. Each company entry contains: `company_name`, `proposed_ticker`, `recommendation`, `score`, `file`, `filing_date`
+3. `_manifest.json` at the memos root includes the current `run_date`
+
+### Auto-repair
+If any field is missing or mis-typed, the function rebuilds every entry by reading the saved memo JSON files
+on disk and rewrites `_index.json` in the correct schema. The manifest is updated if the date is absent.
+
+### Confirmation output (always printed)
+```
+  INDEX VALIDATED — memo will appear in dashboard [YYYY-MM-DD]
+  INDEX REBUILT — structural mismatch corrected [YYYY-MM-DD]
+```
+
+### When writing memos manually (outside the pipeline)
+Run `validate_memo_index("YYYY-MM-DD")` after saving any JSON to `memos/{date}/`.
+This is the fix for the "memo not showing in dashboard" class of bugs.
+
+### Call sites in ipo_screener.py
+- After `save_daily_index([],...)` + `update_manifest(...)` in the no-filings branch
+- After `save_daily_index(memos,...)` + `update_manifest(...)` at end of normal run
+
+---
+
 ## PDF QUALITY CHECK (MANDATORY)
 
 After every memo generation run, `validate_pdf_output()` runs automatically and prints

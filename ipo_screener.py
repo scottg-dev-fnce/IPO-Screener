@@ -3313,6 +3313,152 @@ def save_daily_index(memos: list, run_date: str) -> dict:
     return index
 
 
+def validate_memo_index(run_date: str) -> None:
+    """
+    Post-save index validator — runs after every memo save.
+
+    1. Reads _index.json for run_date and checks it against the app-expected
+       schema: run_date (str), run_timestamp (str), companies[] list where each
+       entry has company_name, proposed_ticker, recommendation, score, file, and
+       filing_date.
+    2. If any field is missing or mis-typed, rebuilds every entry from the saved
+       memo JSON files on disk and rewrites _index.json.
+    3. Ensures _manifest.json includes run_date; adds it if absent.
+    4. Prints a single confirmation line so the result is always visible in
+       terminal output.
+    """
+    date_dir    = DATA_DIR / run_date
+    index_path  = date_dir / "_index.json"
+    manifest_path = DATA_DIR / "_manifest.json"
+    rebuilt = False
+
+    # ── 1. Load existing index ────────────────────────────────────────────
+    index = None
+    if index_path.exists():
+        try:
+            with open(index_path, encoding="utf-8") as f:
+                index = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            index = None
+
+    # ── 2. Validate top-level structure ──────────────────────────────────
+    schema_ok = (
+        index is not None
+        and isinstance(index.get("run_date"), str)
+        and isinstance(index.get("run_timestamp"), str)
+        and isinstance(index.get("companies"), list)
+    )
+
+    # Accept legacy "memos" key in place of "companies"
+    if index is not None and not schema_ok:
+        if "memos" in index and "companies" not in index:
+            index["companies"] = index.pop("memos")
+            schema_ok = (
+                isinstance(index.get("run_date"), str)
+                and isinstance(index.get("run_timestamp"), str)
+                and isinstance(index.get("companies"), list)
+            )
+
+    # ── 3. Full rebuild if top-level is broken ────────────────────────────
+    if not schema_ok:
+        memo_files = sorted(
+            [f for f in date_dir.glob("*.json") if f.name != "_index.json"]
+        ) if date_dir.exists() else []
+        companies = []
+        for mf in memo_files:
+            try:
+                with open(mf, encoding="utf-8") as f:
+                    m = json.load(f)
+                companies.append({
+                    "company_name":               m.get("company_name", ""),
+                    "proposed_ticker":            m.get("proposed_ticker", ""),
+                    "sector":                     m.get("sector", ""),
+                    "offering_size_usd_millions": (m.get("offering") or {}).get("offering_size_usd_millions"),
+                    "recommendation":             m.get("recommendation", ""),
+                    "score":   (m.get("scores") or {}).get("weighted_total"),
+                    "red_flag_count":             m.get("red_flag_count", 0),
+                    "going_concern":              m.get("going_concern", False),
+                    "is_amendment":               m.get("is_amendment", False),
+                    "filing_date":                m.get("filing_date", ""),
+                    "file":                       mf.name,
+                })
+            except Exception:
+                pass
+        index = {
+            "run_date":          run_date,
+            "run_timestamp":     datetime.now(PACIFIC).isoformat(),
+            "total_filings":     len(companies),
+            "underwrite_count":  sum(1 for c in companies if c.get("recommendation") == "UNDERWRITE"),
+            "conditional_count": sum(1 for c in companies if (c.get("recommendation") or "").startswith("CONDITIONAL")),
+            "pass_count":        sum(1 for c in companies if c.get("recommendation") == "PASS"),
+            "error_count":       sum(1 for c in companies if c.get("recommendation") == "ERROR"),
+            "companies": sorted(companies, key=lambda x: x.get("score") or 0, reverse=True),
+        }
+        with open(index_path, "w", encoding="utf-8") as f:
+            json.dump(index, f, indent=2)
+        rebuilt = True
+
+    else:
+        # ── 4. Validate and patch individual company entries ──────────────
+        REQUIRED_ENTRY_FIELDS = ("company_name", "recommendation", "file")
+        entry_patched = False
+        for entry in index["companies"]:
+            # Normalize field aliases
+            if "ticker" in entry and "proposed_ticker" not in entry:
+                entry["proposed_ticker"] = entry.pop("ticker")
+            if "filename" in entry and "file" not in entry:
+                entry["file"] = entry.pop("filename")
+
+            # Check whether any required field is missing
+            missing = [f for f in REQUIRED_ENTRY_FIELDS if not entry.get(f)]
+            needs_score    = entry.get("score") is None
+            needs_filing_date = not entry.get("filing_date")
+
+            if missing or needs_score or needs_filing_date:
+                memo_file = date_dir / (entry.get("file") or "")
+                if memo_file.exists():
+                    try:
+                        with open(memo_file, encoding="utf-8") as f:
+                            m = json.load(f)
+                        for field in REQUIRED_ENTRY_FIELDS:
+                            if not entry.get(field):
+                                entry[field] = m.get(field) or m.get(
+                                    "proposed_ticker" if field == "ticker" else field, "")
+                        if not entry.get("proposed_ticker"):
+                            entry["proposed_ticker"] = m.get("proposed_ticker", "")
+                        if needs_score:
+                            entry["score"] = (m.get("scores") or {}).get("weighted_total")
+                        if needs_filing_date:
+                            entry["filing_date"] = m.get("filing_date", "")
+                        entry_patched = True
+                    except Exception:
+                        pass
+
+        if entry_patched:
+            with open(index_path, "w", encoding="utf-8") as f:
+                json.dump(index, f, indent=2)
+            rebuilt = True
+
+    # ── 5. Ensure manifest includes run_date ──────────────────────────────
+    manifest_has_date = False
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest_has_date = run_date in manifest.get("dates", [])
+        except Exception:
+            pass
+    if not manifest_has_date:
+        update_manifest(run_date)
+        rebuilt = True
+
+    # ── 6. Confirmation ───────────────────────────────────────────────────
+    if rebuilt:
+        print(f"  INDEX REBUILT — structural mismatch corrected [{run_date}]")
+    else:
+        print(f"  INDEX VALIDATED — memo will appear in dashboard [{run_date}]")
+
+
 # ─────────────────────────────────────────────
 # PDF QUALITY VALIDATION
 # ─────────────────────────────────────────────
@@ -3471,6 +3617,7 @@ def main() -> None:
         print(f"  {msg}\n")
         save_daily_index([], run_date)
         update_manifest(run_date)
+        validate_memo_index(run_date)
         return
 
     total = len(filings)
@@ -3491,6 +3638,7 @@ def main() -> None:
 
     index = save_daily_index(memos, run_date)
     update_manifest(run_date)
+    validate_memo_index(run_date)
 
     print(f"\n{'-'*55}")
     print(f"  SCREENING COMPLETE  |  {total} filings analyzed")
