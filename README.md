@@ -1,4 +1,4 @@
-# Regal Securities — ECM IPO Due Diligence Screener
+# ECM IPO Due Diligence Screener
 
 **AI-assisted S-1 analysis tool for equity capital markets underwriting decisions.**
 Built with Claude Opus 4, Python 3.11+, and a browser-based dashboard.
