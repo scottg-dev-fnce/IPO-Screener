@@ -1517,13 +1517,99 @@ def _parse_claude_json(raw: str) -> dict:
 
 
 # ─────────────────────────────────────────────
+# PRE-ANALYSIS ELIGIBILITY GATE
+# ─────────────────────────────────────────────
+
+# SIC codes that identify non-operating entities ineligible for ECM screening
+_INELIGIBLE_SIC_CODES: dict[str, str] = {
+    "6770": "Blank Check Company",
+    "6726": "Investment Office (SPAC / Closed-End Fund / BDC)",
+    "6798": "Real Estate Investment Trust (REIT)",
+}
+
+# Filing form types that identify non-operating registrations
+_INELIGIBLE_FORM_TYPES: dict[str, str] = {
+    "S-11": "REIT",
+    "N-2":  "Closed-End Fund / BDC",
+}
+
+# Company name substrings (lower-cased) that identify non-operating entities
+_INELIGIBLE_NAME_PATTERNS: list[tuple[str, str]] = [
+    ("acquisition corp",            "Blank Check Company"),
+    ("acquisition corporation",     "Blank Check Company"),
+    ("blank check",                 "Blank Check Company"),
+    ("spac",                        "SPAC"),
+    ("special purpose acquisition", "SPAC"),
+    ("royalty trust",               "Royalty Trust"),
+    ("income trust",                "Income Trust"),
+    ("investment trust",            "Investment Trust"),
+]
+
+
+def validate_company_type(
+    company_name: str,
+    sic_code: str,
+    filing_type: str,
+) -> tuple[bool, str]:
+    """
+    Pre-analysis eligibility gate. Returns (is_eligible, abort_message).
+
+    Checks (in order):
+      1. Filing form type against _INELIGIBLE_FORM_TYPES
+      2. SIC code against _INELIGIBLE_SIC_CODES
+      3. Company name against _INELIGIBLE_NAME_PATTERNS
+
+    If any check fails, is_eligible=False and abort_message contains the
+    formatted reason. Must be called BEFORE fetch_filing_text() — this is a
+    hard gate with no bypass.
+    """
+    name_lower = (company_name or "").lower()
+
+    # 1. Form type check (available before any network call)
+    if filing_type in _INELIGIBLE_FORM_TYPES:
+        entity_label = _INELIGIBLE_FORM_TYPES[filing_type]
+        msg = (
+            f"ANALYSIS ABORTED — {company_name} is a {entity_label} "
+            f"based on SIC code {sic_code or 'unknown'} and filing type {filing_type}. "
+            "This screener is designed for operating company IPOs only. "
+            "Non-operating entities are not eligible for ECM due diligence screening."
+        )
+        return False, msg
+
+    # 2. SIC code check (populated after fetch_sic_for_cik)
+    if sic_code and sic_code in _INELIGIBLE_SIC_CODES:
+        entity_label = _INELIGIBLE_SIC_CODES[sic_code]
+        msg = (
+            f"ANALYSIS ABORTED — {company_name} is a {entity_label} "
+            f"based on SIC code {sic_code} and filing type {filing_type}. "
+            "This screener is designed for operating company IPOs only. "
+            "Non-operating entities are not eligible for ECM due diligence screening."
+        )
+        return False, msg
+
+    # 3. Company name pattern check
+    for pattern, entity_label in _INELIGIBLE_NAME_PATTERNS:
+        if pattern in name_lower:
+            msg = (
+                f"ANALYSIS ABORTED — {company_name} is a {entity_label} "
+                f"based on SIC code {sic_code or 'unknown'} and filing type {filing_type}. "
+                "This screener is designed for operating company IPOs only. "
+                "Non-operating entities are not eligible for ECM due diligence screening."
+            )
+            return False, msg
+
+    return True, ""
+
+
+# ─────────────────────────────────────────────
 # CONTENT TRIAGE (keyword matching — no API)
 # ─────────────────────────────────────────────
 
 # (keyword, entity_type) — checked in order against the first 15,000 chars of filing text
 _TRIAGE_RULES = [
-    # Non-operating shells
+    # Non-operating shells — cover page phrases (per eligibility gate spec)
     ("blank check company",                        "SPAC"),
+    ("no specific business plan",                  "SPAC"),
     ("business combination",                       "SPAC"),
     ("trust account",                              "SPAC"),
     ("exchange-traded fund",                       "ETF"),
@@ -1965,16 +2051,31 @@ def analyze_filing(client: anthropic.Anthropic, filing: dict) -> dict:
 
     log.info(f"Analyzing: {company} ({form_type})")
 
-    filing_text = fetch_filing_text(accession, cik, company)
-    time.sleep(1)  # additional courtesy pause between fetch and API call
+    # ── STEP 1: Form type + name eligibility check (no network required) ──
+    is_eligible, abort_msg = validate_company_type(company, "", form_type)
+    if not is_eligible:
+        print(f"\n{'='*72}\n{abort_msg}\n{'='*72}\n")
+        log.warning(abort_msg)
+        return _skip_stub(company, filing_date, form_type, "NON_OPERATING_ENTITY", abort_msg)
 
-    # ── Fetch SIC code from EDGAR Submissions API ──
+    # ── STEP 2: Fetch SIC code from EDGAR Submissions API (before S-1 fetch) ──
     sic_code, sic_description = fetch_sic_for_cik(cik)
     if sic_code:
         log.info(f"SIC {sic_code} — {sic_description}")
     time.sleep(0.5)  # EDGAR rate-limit courtesy pause
 
-    # ── Triage: classify entity type before spending Opus tokens ──
+    # ── STEP 3: Full eligibility gate with SIC code — hard stop before any S-1 fetch ──
+    is_eligible, abort_msg = validate_company_type(company, sic_code, form_type)
+    if not is_eligible:
+        print(f"\n{'='*72}\n{abort_msg}\n{'='*72}\n")
+        log.warning(abort_msg)
+        return _skip_stub(company, filing_date, form_type, "NON_OPERATING_ENTITY", abort_msg)
+
+    # ── STEP 4: Eligible — now safe to fetch S-1 text ──
+    filing_text = fetch_filing_text(accession, cik, company)
+    time.sleep(1)  # additional courtesy pause between fetch and API call
+
+    # ── STEP 5: Content triage (keyword match on filing text — catches cover page phrases) ──
     triage = triage_filing(filing_text, company)
     if triage.get("skip"):
         log.info(

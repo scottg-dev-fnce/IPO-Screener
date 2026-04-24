@@ -332,6 +332,43 @@ When adding or editing a section renderer:
    - `m.conditions` → `m.conditional_underwrite_conditions`
    - `val.public_comps` (strings) → `val.comparable_companies` (objects)
 
+## PRE-ANALYSIS ELIGIBILITY GATE
+
+This screener is designed exclusively for operating company IPOs.
+Non-operating entities (SPACs, blank check companies, REITs, ETFs, closed-end funds,
+BDCs, royalty trusts, investment trusts) are automatically aborted before any S-1
+content is fetched or any Opus analysis is run.
+
+### Gate function: `validate_company_type(company_name, sic_code, filing_type)`
+Called in `analyze_filing()` in two passes:
+1. **Pass 1 (before any network call):** checks filing form type and company name only.
+2. **Pass 2 (after `fetch_sic_for_cik()`):** checks SIC code in addition to form/name.
+The S-1 is only fetched after both passes return `is_eligible=True`.
+
+### Abort conditions (any one triggers abort — no bypass)
+| Condition | Entity type |
+|---|---|
+| SIC 6770 | Blank Check Company |
+| SIC 6726 | Investment Office (SPAC / Closed-End Fund / BDC) |
+| SIC 6798 | REIT |
+| Filing type S-11 | REIT registration |
+| Filing type N-2 | Closed-End Fund / BDC registration |
+| Name contains: "acquisition corp", "acquisition corporation", "blank check", "spac", "special purpose acquisition" | Blank Check / SPAC |
+| Name contains: "royalty trust", "income trust", "investment trust" | Non-operating trust |
+| Cover page contains "blank check company" or "no specific business plan" | SPAC (caught by `triage_filing()` after fetch) |
+
+### Abort message format
+```
+ANALYSIS ABORTED — [Company Name] is a [entity type] based on SIC code [code]
+and filing type [type]. This screener is designed for operating company IPOs only.
+Non-operating entities are not eligible for ECM due diligence screening.
+```
+
+### Do not modify without review
+Do not remove or weaken the gate. Do not add a bypass flag. The gate prevents
+wasted Opus tokens on ineligible filings and protects the analyst from inadvertently
+receiving scoring output on non-operating entities.
+
 ## RENDERING RULES (ipo_screener_app.html)
 
 ### RF Banner Rule (ENFORCED)
