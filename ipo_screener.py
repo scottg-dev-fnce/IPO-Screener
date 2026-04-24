@@ -122,6 +122,11 @@ Analyze the following from the filing text provided:
 [C] RISK & RED FLAGS
     - Red flags are populated via the Red Flag Inference Engine below.
       Do NOT re-list flag codes in this section.
+    - DILIGENCE CONTEXT: If [EXTERNAL DILIGENCE DATA — source: /diligence] is provided in
+      the user message, treat it as an independent pre-analysis review. Use it to ensure
+      comprehensive coverage — if it flags a concern your own analysis missed, include that
+      concern in your red_flags[]. Do NOT set "dual_source_confirmed" on any flag yourself;
+      that field is written by the Python pipeline after cross-referencing is complete.
     - Populate `key_risk_narrative` with a single concise prose paragraph covering
       material, company-specific risks from the filing that are NOT already captured
       by a triggered red flag code: customer concentration detail, key-man dependency,
@@ -1660,6 +1665,204 @@ def fetch_unit_economics(client: anthropic.Anthropic, company_name: str,
         return {}
 
 
+def fetch_diligence_checklist(client: anthropic.Anthropic, company_name: str,
+                               sector: str, filing_text: str) -> list:
+    """
+    Pre-analysis diligence step — mirrors the /dd-checklist slash command workflow.
+
+    Sends the first 25k characters of the S-1 to COMPS_MODEL (Sonnet) with a
+    structured checklist prompt. Returns a list of diligence findings, each mapped
+    to an RF code where applicable, for injection as [EXTERNAL DILIGENCE DATA] context
+    and for Python-side cross-referencing against Opus's red_flags[].
+
+    Each item: {category, finding, severity, rf_code_match, diligence_triggered}
+    Falls back to empty list on any error.
+    """
+    filing_snippet = filing_text[:25_000]
+    prompt = (
+        f"You are a senior IPO due diligence analyst performing a /dd-checklist review.\n\n"
+        f"Company: {company_name}\n"
+        f"Sector: {sector or 'unknown'}\n\n"
+        "Review the SEC S-1 filing text below. Identify ALL material red flags, risks, and "
+        "diligence concerns an underwriting desk should be aware of. For each finding:\n"
+        "  - Assign a category (e.g. Revenue Quality, Capital Structure, Governance, etc.)\n"
+        "  - Write a concise factual finding (1-2 sentences, cite the specific fact)\n"
+        "  - Rate severity: HIGH, MEDIUM, or LOW\n"
+        "  - Map to the closest RF code from this framework where applicable:\n"
+        "    RF-01 Going Concern | RF-02 Customer Concentration | RF-03 Revenue Quality\n"
+        "    RF-04 Insider Liquidity | RF-05 Runway Risk | RF-06 Governance Risk\n"
+        "    RF-07 Valuation Disconnect | RF-08 Management Red Flags | RF-09 Related Party\n"
+        "    RF-10 Audit Issues | RF-11 Margin Risk | RF-12 Regulatory Overhang\n"
+        "    RF-13 Market Timing | RF-14 Capital Structure Risk | RF-15 Product Concentration\n"
+        "    RF-16 Geographic Concentration | RF-17 Technology Obsolescence\n"
+        "    RF-18 Working Capital Stress | RF-19 Proceeds Quality | RF-20 Syndicate Spread\n"
+        "    RF-21 PE/Sponsor Overhang | RF-22 Small Firm Suitability\n"
+        "    RF-23 Insider Liquidity Overhang | RF-24 Auditor Quality | RF-25 Accounting Quality\n"
+        "  - Set diligence_triggered: true for any finding that warrants underwriter attention\n\n"
+        "Return ONLY a valid JSON array with no markdown. Each element:\n"
+        "{\n"
+        '  "category": "string",\n'
+        '  "finding": "string",\n'
+        '  "severity": "HIGH"|"MEDIUM"|"LOW",\n'
+        '  "rf_code_match": "RF-XX"|null,\n'
+        '  "diligence_triggered": true|false\n'
+        "}\n\n"
+        "Return an empty array [] if the filing text is insufficient to make findings. "
+        "Do NOT fabricate — only report what the text supports.\n\n"
+        f"FILING TEXT (first 25,000 characters):\n{filing_snippet}\n"
+    )
+    try:
+        resp = client.messages.create(
+            model=COMPS_MODEL,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+        items = json.loads(raw)
+        if not isinstance(items, list):
+            return []
+        # Sanitize — keep only triggered items with required fields
+        clean = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            clean.append({
+                "category":           str(item.get("category", "Diligence Finding")),
+                "finding":            str(item.get("finding", "")),
+                "severity":           str(item.get("severity", "MEDIUM")).upper(),
+                "rf_code_match":      item.get("rf_code_match") if isinstance(item.get("rf_code_match"), str) else None,
+                "diligence_triggered": bool(item.get("diligence_triggered", True)),
+            })
+        log.info(f"Diligence checklist fetched for {company_name}: {len(clean)} findings")
+        return clean
+    except Exception as e:
+        log.warning(f"fetch_diligence_checklist failed for {company_name}: {e}")
+        return []
+
+
+# RF keyword map used by cross_reference_flags() for text-based fallback matching
+_RF_KEYWORD_MAP = {
+    "RF-01": ["going concern", "liquidity doubt", "ability to continue"],
+    "RF-02": ["customer concentration", "top customer", "largest customer", "single customer"],
+    "RF-03": ["revenue quality", "accounts receivable", "channel stuff", "deferred revenue declin"],
+    "RF-04": ["insider", "secondary shares", "selling shareholder", "founder sell"],
+    "RF-05": ["runway", "cash burn", "months of cash"],
+    "RF-06": ["governance", "dual class", "voting control", "classified board"],
+    "RF-07": ["valuation disconnect", "ev/revenue", "sector median", "overvalued"],
+    "RF-08": ["ceo tenure", "cfo tenure", "management flag", "sec enforcement", "prior failure"],
+    "RF-09": ["related party"],
+    "RF-10": ["material weakness", "internal control", "auditor change", "restatement"],
+    "RF-11": ["gross margin", "negative margin", "inverted unit economics"],
+    "RF-12": ["regulatory", "sec investigation", "doj", "litigation overhang"],
+    "RF-13": ["market timing", "failed ipo", "sector downturn"],
+    "RF-14": ["capital structure", "covenant", "pik debt", "convertible dilut", "leverage"],
+    "RF-15": ["product concentration", "single product", "one product"],
+    "RF-16": ["geographic concentration", "single geography", "single country"],
+    "RF-17": ["technology obsolescence", "ai disruption", "open source threat"],
+    "RF-18": ["working capital", "current ratio", "negative working capital"],
+    "RF-19": ["proceeds quality", "debt repayment", "sponsor distribution", "non-operational"],
+    "RF-20": ["syndicate spread", "co-manager", "underwriter count"],
+    "RF-21": ["sponsor overhang", "pe ownership", "lockup expiry"],
+    "RF-22": ["small firm", "offering size", "pre-revenue"],
+    "RF-23": ["insider liquidity overhang", "secondary offering"],
+    "RF-24": ["auditor quality", "non-big 4", "regional auditor", "unknown auditor"],
+    "RF-25": ["accounting quality", "aggressive accounting", "non-gaap adjust"],
+}
+
+
+def cross_reference_flags(memo: dict, diligence_items: list) -> dict:
+    """
+    Cross-reference Opus red_flags[] against /diligence checklist items (Python-side).
+
+    Rules (no-duplication guarantee):
+      1. Exact RF code match: normalize codes ("RF-01A" → "RF-01") and match
+         each diligence item's rf_code_match against Opus flags.
+      2. Keyword fallback: if rf_code_match is null, infer RF code from finding
+         text via _RF_KEYWORD_MAP and attempt to match Opus flags that way.
+      3. Matched Opus flag → set dual_source_confirmed = True on that flag.
+         The diligence item is consumed; no new flag is added.
+      4. Unmatched triggered diligence item → append new flag object with
+         source = "diligence_only". Never added twice (set tracks consumed items).
+      5. red_flag_count updated to include diligence_only entries.
+    """
+    if not diligence_items:
+        return memo
+
+    flags = list(memo.get("red_flags") or [])
+
+    def _norm(code: str) -> str:
+        """RF-01A → RF-01, RF-07B → RF-07, RF-07 → RF-07"""
+        if not code:
+            return ""
+        c = code.strip().upper()
+        # Strip trailing single letter variant suffix (A, B but not a digit)
+        c = re.sub(r'(RF-\d+)[A-Z]$', r'\1', c)
+        return c
+
+    def _infer_rf_from_text(item: dict) -> str:
+        text = (item.get("finding", "") + " " + item.get("category", "")).lower()
+        for code, keywords in _RF_KEYWORD_MAP.items():
+            if any(kw in text for kw in keywords):
+                return code
+        return ""
+
+    # Build lookup: normalized RF code → list of flag indices in Opus output
+    opus_by_code: dict[str, list[int]] = {}
+    for i, f in enumerate(flags):
+        if not isinstance(f, dict):
+            continue
+        raw_code = f.get("flag_id") or f.get("code") or ""
+        norm = _norm(raw_code)
+        if norm:
+            opus_by_code.setdefault(norm, []).append(i)
+
+    consumed: set[int] = set()   # diligence item indices that matched an Opus flag
+
+    # Pass 1 — RF-code-match first (exact, then keyword fallback)
+    for i, item in enumerate(diligence_items):
+        if not item.get("diligence_triggered", True):
+            continue
+        rf = _norm(item.get("rf_code_match") or "")
+        if not rf:
+            rf = _infer_rf_from_text(item)
+        matched_indices = opus_by_code.get(rf, [])
+        if matched_indices:
+            for idx in matched_indices:
+                flags[idx]["dual_source_confirmed"] = True
+            consumed.add(i)
+            log.debug(f"Diligence item {i} ({rf}) confirmed Opus flag(s) at index {matched_indices}")
+
+    # Pass 2 — unmatched triggered items → diligence_only flags
+    for i, item in enumerate(diligence_items):
+        if i in consumed:
+            continue
+        if not item.get("diligence_triggered", True):
+            continue
+        flags.append({
+            "flag_id":              "DILIGENCE",
+            "code":                 "DILIGENCE",
+            "label":                item.get("category", "Diligence Finding"),
+            "description":          item.get("finding", ""),
+            "narrative":            item.get("finding", ""),
+            "severity":             item.get("severity", "MEDIUM"),
+            "triggered":            True,
+            "score_deduction":      None,
+            "affected_dimension":   "Review Required",
+            "source":               "diligence_only",
+            "dual_source_confirmed": False,
+        })
+        log.debug(f"Diligence item {i} added as diligence_only: {item.get('category')}")
+
+    memo["red_flags"]    = flags
+    memo["red_flag_count"] = sum(
+        1 for f in flags
+        if isinstance(f, dict) and f.get("triggered") is not False
+    )
+    memo["diligence_cross_referenced"] = True
+    return memo
+
+
 def analyze_filing(client: anthropic.Anthropic, filing: dict) -> dict:
     """
     Analyze a single S-1 filing with Claude Opus.
@@ -1772,6 +1975,32 @@ Your additional tasks for this amendment:
             + "\nCopy these values into financials{} per the instructions in your system prompt.\n"
         )
 
+    # ── Diligence checklist pre-fetch (/diligence — runs before Opus) ────────
+    diligence_items = []
+    try:
+        diligence_items = fetch_diligence_checklist(
+            client, company, sic_description or "", filing_text
+        )
+    except Exception as e:
+        log.warning(f"Diligence checklist fetch failed for {company}: {e}")
+
+    diligence_context = ""
+    if diligence_items:
+        d_lines = []
+        for item in diligence_items:
+            rf_tag = f" | RF: {item['rf_code_match']}" if item.get("rf_code_match") else ""
+            d_lines.append(
+                f"  [{item['severity']}]{rf_tag} | {item['category']}\n"
+                f"    {item['finding']}"
+            )
+        diligence_context = (
+            "\n[EXTERNAL DILIGENCE DATA — source: /diligence]\n"
+            + "\n".join(d_lines)
+            + "\nCross-reference these findings against your own red flag analysis. "
+            "Ensure any concern flagged here is covered in your red_flags[]. "
+            "Do NOT set dual_source_confirmed — the pipeline handles that post-analysis.\n"
+        )
+
     comps_context = ""
     if external_comps:
         lines = []
@@ -1802,7 +2031,7 @@ Filing date: {filing_date}
 Accession number: {accession}
 CIK: {cik}
 {sic_line}
-{amendment_context}{ue_context}{comps_context}
+{amendment_context}{ue_context}{diligence_context}{comps_context}
 FILING TEXT (may be truncated to ~80,000 characters):
 {filing_text}
 
@@ -1843,6 +2072,9 @@ Set filing_url to: {edgar_url}
                 if fetched is not None and fin.get(fin_key) is None:
                     fin[fin_key] = fetched
             memo["unit_econ_enriched"] = True
+        # Cross-reference Opus flags against /diligence checklist (Python-side)
+        if diligence_items:
+            memo = cross_reference_flags(memo, diligence_items)
         memo = enrich_valuation_with_live_comps(memo)
         memo = enrich_with_damodaran(memo)
         memo = apply_scoring_adjustments(memo)

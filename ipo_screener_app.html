@@ -516,6 +516,20 @@
     flex-shrink: 0; font-family: 'JetBrains Mono', monospace; margin-top: 1px;
   }
   .flag-text { font-size: 11px; color: var(--text-mid); line-height: 1.5; }
+  .flag-ds-badge {
+    display: inline-block; margin-left: 8px; vertical-align: middle;
+    font-size: 9px; font-weight: 600; letter-spacing: .06em;
+    color: var(--green); background: rgba(46,204,138,.12);
+    border: 1px solid rgba(46,204,138,.3);
+    padding: 1px 7px; border-radius: 3px; white-space: nowrap;
+  }
+  .flag-do-badge {
+    display: inline-block; margin-left: 8px; vertical-align: middle;
+    font-size: 9px; font-weight: 600; letter-spacing: .06em;
+    color: var(--amber); background: rgba(232,169,53,.12);
+    border: 1px solid rgba(232,169,53,.3);
+    padding: 1px 7px; border-radius: 3px; white-space: nowrap;
+  }
 
   /* Cover page executive summary block */
   .cover-exec-summary {
@@ -1745,15 +1759,31 @@ function renderMemo(m) {
   </div>`;
 
   // Risk & Red Flags (section 04) — only show triggered flags; escape HTML entities
+  // Dual-source: flags confirmed independently by Opus + /diligence → green badge
+  // Diligence-only: flagged by /diligence but not caught by Opus → amber badge + amber code chip
   const _triggeredFlags = (m.red_flags || []).filter(f => typeof f === "string" || f.triggered !== false);
   const flagListHtml = _triggeredFlags.length > 0
     ? `<div class="flag-list">${_triggeredFlags.map(f => {
         if (typeof f === "string") return `<div class="flag-entry"><span class="flag-code">FLAG</span><span class="flag-text">${escAttr(f)}</span></div>`;
+        const _isDiligenceOnly = f.source === "diligence_only";
+        const _isDualConfirmed = f.dual_source_confirmed === true;
         const _fc = escAttr(f.flag_id || f.code || "RF");
         const _fl = f.label || f.description || "";
         const _fn = f.narrative || "";
         const _ft = _fl && _fn ? `${escAttr(_fl)} \u2014 ${escAttr(_fn)}` : escAttr(_fl || _fn || "");
-        return `<div class="flag-entry"><span class="flag-code">${_fc}</span><span class="flag-text">${_ft}</span></div>`;
+        const _codeStyle = _isDiligenceOnly
+          ? ' style="color:var(--amber);background:rgba(232,169,53,.12);border-color:rgba(232,169,53,.3)"'
+          : "";
+        const _dsBadge = _isDualConfirmed
+          ? `<span class="flag-ds-badge">&#x2713; Confirmed: 2 sources</span>`
+          : "";
+        const _doBadge = _isDiligenceOnly
+          ? `<span class="flag-do-badge">Diligence Flag \u2014 review required</span>`
+          : "";
+        return `<div class="flag-entry">
+          <span class="flag-code"${_codeStyle}>${_fc}</span>
+          <span class="flag-text">${_ft}${_dsBadge}${_doBadge}</span>
+        </div>`;
       }).join("")}</div>`
     : `<p class="memo-prose" style="color:var(--green);margin-bottom:12px">&#x2713; No structural red flags triggered.</p>`;
   const riskNarrative = m.key_risk_narrative
@@ -1822,7 +1852,13 @@ function renderMemo(m) {
     const p    = _parseFlag(f);
     const desc = _cleanRubric(p.desc) || p.desc;
     const cls  = ({critical:"pft-critical",high:"pft-high",medium:"pft-medium",low:"pft-low"})[(p.sev||"").toLowerCase()] || "pft-none";
-    return `<tr><td class="pft-code">${p.name}</td><td class="pft-sev"><span class="pft-badge ${cls}">${p.sev||"—"}</span></td><td class="pft-desc">${desc}</td></tr>`;
+    // PDF annotations for dual-source and diligence-only flags
+    const _srcNote = (typeof f === "object" && f.dual_source_confirmed)
+      ? ' <span style="font-size:8px;color:#1a7a4e;font-weight:600">[2-SRC]</span>'
+      : (typeof f === "object" && f.source === "diligence_only")
+        ? ' <span style="font-size:8px;color:#b07b10;font-weight:600">[DILIGENCE]</span>'
+        : "";
+    return `<tr><td class="pft-code">${p.name}${_srcNote}</td><td class="pft-sev"><span class="pft-badge ${cls}">${p.sev||"—"}</span></td><td class="pft-desc">${desc}</td></tr>`;
   }).join("");
   const pdfFlagTable = pdfFlagRows
     ? `<table class="pdf-flag-table"><thead><tr><th class="pft-th">Flag</th><th class="pft-th">Severity</th><th class="pft-th">Description</th></tr></thead><tbody>${pdfFlagRows}</tbody></table>`
