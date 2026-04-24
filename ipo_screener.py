@@ -274,23 +274,56 @@ Analyze the following from the filing text provided:
     - Assess alignment between deal size and syndicate quality
 
 [N] COMPARABLE IPO PERFORMANCE
-    Score each candidate IPO across 5 dimensions:
-      (1) Revenue match — LTM revenue within 3x of the subject company
-      (2) Business model match — same SIC code family or functionally equivalent model
-      (3) Traditional IPO only — exclude SPACs, direct listings, and carve-outs
-      (4) End-market vertical match — specific vertical, not just broad sector label
-          (e.g., "autonomous industrial robotics" not just "technology")
-      (5) Stage and burn match — similar pre/post-profitability stage and cash burn rate
-    Classification rules:
-      - primary_ipo_comp: scores well on 4–5 dimensions
-      - secondary_ipo_comp: scores well on exactly 3 dimensions
-      - Drop entirely: fewer than 3 dimensions matched
-    Output cap: maximum 5 companies total. Fill primary_ipo_comp slots first, then
-    secondary_ipo_comp with remaining slots. If fewer than 5 qualify, output only
-    what qualifies — do not pad with weak comps to reach 5.
-    For each surviving comp: company name, ticker, IPO date, offer price, estimated
-    first-day pop %, approximate current vs offer price status, and comp_type label.
-    Assess whether the surviving comps set a favorable or unfavorable precedent.
+    Apply the 6-Criterion Institutional Framework to select historical IPO comps.
+    This is the same framework as public comps — the same hard filters and scoring
+    thresholds apply. Traditional IPO only — exclude SPACs, direct listings, and
+    carve-outs regardless of other criteria scores.
+
+    CRITERION 1 — INDUSTRY & BUSINESS MODEL (HARD FILTER — REQUIRED):
+      The IPO comp must operate in the same primary industry as the subject company,
+      anchored to the subject's SIC code. Within that industry, the comp must share
+      the same core revenue model (SaaS, hardware, marketplace, services, manufacturing,
+      etc.). A comp whose primary revenue source differs from the subject's is excluded
+      regardless of other scores. This criterion cannot be waived.
+
+    CRITERION 2 — IPO SIZE / IMPLIED MARKET CAP (HARD FILTER — REQUIRED):
+      The historical IPO's offering size and implied market cap at offer price must be
+      within 0.5x–2.0x of the subject company's implied market cap at the IPO price
+      midpoint. A comp 5x larger or 5x smaller is not a valid IPO comp regardless of
+      industry similarity. This criterion cannot be waived.
+
+    CRITERION 3 — GROWTH STAGE (0–2 pts):
+      Same lifecycle stage — pre-profit high-growth, early-profit scaling, or mature.
+      2 pts: same stage. 1 pt: adjacent stage. 0 pts: different stage.
+
+    CRITERION 4 — REVENUE SCALE (0–2 pts):
+      LTM revenue at IPO must be within the same order of magnitude.
+      2 pts: within 1.5x. 1 pt: within 3x. 0 pts: outside 3x.
+
+    CRITERION 5 — MARGIN PROFILE (0–2 pts):
+      Gross margin at IPO must be within 15 percentage points of the subject company.
+      2 pts: within 10pp. 1 pt: within 15pp. 0 pts: outside 15pp.
+
+    CRITERION 6 — GEOGRAPHIC MIX (0–1 pt):
+      Primary revenue geography must match (US-dominated vs. international-dominated).
+      1 pt: same primary geography. 0 pts: different.
+
+    SELECTION RULE (max 7 scoreable points from Criteria 3–6):
+      Hard-filter first: any comp failing Criterion 1 or 2 is excluded automatically.
+      Among surviving candidates, minimum 4 of 7 points required to qualify.
+      - primary_ipo_comp: 6–7 points
+      - secondary_ipo_comp: 4–5 points
+      - Excluded: fewer than 4 points — never include under any circumstances
+
+    OUTPUT CAP: Maximum 5 comps total — 3 primary, 2 secondary. If fewer than 3
+    qualify as primary, output only what qualifies. Never pad with weak comps.
+
+    For each surviving comp populate: company name, ticker, IPO date, offer price,
+    estimated first-day return %, approximate current vs. offer price status,
+    comp_type label, and comp_selection_rationale (one sentence citing which criteria
+    the comp met and where it scored lower — gives analysts visibility to challenge).
+    Assess whether the surviving comps set a favorable or unfavorable precedent for
+    the subject company's deal pricing and aftermarket performance.
 
 [O] AUDITOR QUALITY
     - Identify the auditor from the filing
@@ -431,14 +464,66 @@ Analyze the following from the filing text provided:
         Implied EV = (midpoint price × fully-diluted shares outstanding) + total debt − cash
       If price range is not yet set, use any disclosed valuation guidance or the last private
       round valuation. Document your assumption in the valuation_flag reasoning.
-    - If the user message contains an [EXTERNAL COMPS DATA — source: /comps] block, use
-      those pre-fetched comparable companies as your primary comp set. If the block is absent
-      or contains fewer than 3 comps, supplement with your own selection to reach 4–6 total.
+    - PUBLIC COMP SELECTION — 6-CRITERION INSTITUTIONAL FRAMEWORK:
+      Apply this framework to every comp candidate regardless of sector or company type.
+      Criteria 1 and 2 are hard filters — failing either disqualifies the comp
+      absolutely. Criteria 3–6 are scored; minimum 4 of 7 points required to qualify.
+
+      CRITERION 1 — INDUSTRY & BUSINESS MODEL (HARD FILTER — REQUIRED):
+        The comp must operate in the same primary industry as the subject company,
+        anchored to the subject company's SIC code. Within that industry, the comp
+        must share the same core revenue model — SaaS vs. hardware vs. marketplace vs.
+        services vs. manufacturing vs. colocation, etc. A comp whose primary revenue
+        source differs from the subject's is excluded regardless of other attributes.
+        This criterion cannot be waived for any reason.
+
+      CRITERION 2 — MARKET CAPITALIZATION (HARD FILTER — REQUIRED):
+        The comp's current market cap must be within 0.5x–2.0x of the subject
+        company's implied market cap at the IPO price range midpoint. A company 10x
+        larger or 10x smaller is not a valid comp regardless of industry similarity.
+        This criterion cannot be waived for any reason.
+
+      CRITERION 3 — GROWTH STAGE (0–2 pts):
+        Same lifecycle stage: pre-profit high-growth, early-profit scaling, or mature.
+        Never mix growth-stage companies with mature profitable comps.
+        2 pts: same stage. 1 pt: adjacent stage. 0 pts: different stage.
+
+      CRITERION 4 — REVENUE SCALE (0–2 pts):
+        LTM revenue must be within the same order of magnitude as the subject company.
+        2 pts: within 1.5x. 1 pt: within 3x. 0 pts: outside 3x.
+
+      CRITERION 5 — MARGIN PROFILE (0–2 pts):
+        Gross margin must be within 15 percentage points of the subject company.
+        A 75% gross margin SaaS company must not comp against a 35% gross margin
+        hardware company.
+        2 pts: within 10pp. 1 pt: within 15pp. 0 pts: outside 15pp.
+
+      CRITERION 6 — GEOGRAPHIC MIX (0–1 pt):
+        Primary revenue geography must match (US-dominated vs. international-dominated).
+        1 pt: same primary geography. 0 pts: different.
+
+      SELECTION RULE (max 7 scoreable points from Criteria 3–6):
+        Hard-filter first: any comp failing Criterion 1 or 2 is excluded automatically.
+        Among surviving candidates, minimum 4 of 7 points required to qualify.
+        Comps scoring 6–7 are primary comps. Comps scoring 4–5 are secondary comps.
+        No comp scoring below 4 is included under any circumstances — never pad.
+
+      OUTPUT CAP: Maximum 5 comps total — 3 primary, 2 secondary. If fewer than 3
+      qualify as primary, output only what qualifies.
+
+    - If the user message contains an [EXTERNAL COMPS DATA — source: /comps] block,
+      apply the 6-criterion framework to those candidates first. Use pre-fetched comps
+      that pass the hard filters and meet the point threshold. Supplement with your own
+      selections only if the block has fewer than 3 qualifying comps after filtering.
     - Populate `public_comps` as an array of objects (NOT strings). Each object must have:
         { "name": string, "ticker": string, "ev_revenue": number|null,
-          "ev_ebitda": number|null, "revenue_growth_pct": number|null }
-      Copy the ev_revenue, ev_ebitda, and revenue_growth_pct values directly from the
+          "ev_ebitda": number|null, "revenue_growth_pct": number|null,
+          "comp_type": "primary"|"secondary",
+          "comp_selection_rationale": string }
+      Copy ev_revenue, ev_ebitda, and revenue_growth_pct values directly from the
       [EXTERNAL COMPS DATA] block where available; set null for unavailable metrics.
+      comp_selection_rationale: one sentence stating which criteria the comp met and
+      where it scored lower — gives the analyst visibility to challenge any selection.
     - Calculate for the subject company:
         • EV/Revenue = implied_ev / TTM_revenue
         • EV/EBITDA = implied_ev / TTM_EBITDA (set to null if EBITDA is negative)
@@ -450,17 +535,6 @@ Analyze the following from the filing text provided:
       median as a positive signal for a GAAP-loss company. The correct primary metric for
       unprofitable companies is EV/EBITDA or EV/Adj.EBITDA. A discount is EXPECTED and
       does not constitute an attractive valuation.
-    - COMP SELECTION EXCLUSIONS: Do NOT use the following as comparable public companies unless
-      the subject company's SIC code or primary revenue model squarely matches that sector:
-        • Semiconductor / chip designers (Nvidia, AMD, Broadcom, Qualcomm, Marvell, etc.)
-        • Hardware / device manufacturers (Dell, HP, Lenovo, NetApp, etc.)
-        • REITs or real estate investment trusts of any kind
-        • Data center colocation operators (Equinix, Digital Realty, Iron Mountain, etc.)
-          — unless the subject company's PRIMARY revenue is from colocation space rental
-      For AI infrastructure / cloud GPU / HPC providers, select comps from cloud services,
-      managed hosting, or vertical SaaS companies with recurring revenue models.
-      Always populate comp_selection_rationale explaining why each comp was chosen and
-      confirming no excluded sector types were used.
     - SOURCE VERIFICATION: For every market statistic cited in the valuation narrative
       (sector multiples, comp company revenues, market share data), identify whether the
       source is tier_1 (WSJ, Bloomberg, Reuters, FT, NYT), tier_2 (PitchBook, Damodaran,
