@@ -1642,6 +1642,14 @@ function renderMemo(m) {
     }
     return safeRender(sched);
   })();
+  // Split multi-sentence financial narrative fields into bullet lists for readability
+  const _sentBullets = text => {
+    if (!text || text === "—") return text;
+    const sents = text.replace(/([.;])\s+/g, "$1\n").split("\n").map(s => s.trim()).filter(Boolean);
+    if (sents.length <= 1) return text;
+    return `<ul style="margin:4px 0 0 14px;padding:0;font-size:11px;line-height:1.7;text-align:left">${sents.map(s => `<li style="margin-bottom:2px">${s}</li>`).join("")}</ul>`;
+  };
+
   const finRows = [
     ["Revenue (Y-2)",         fmtM(_revY2)],
     ["Revenue (Y-1)",         fmtM(_revY1)],
@@ -1656,8 +1664,8 @@ function renderMemo(m) {
     ["Post-IPO Runway",       fin.estimated_runway_months_post_ipo != null ? `${fin.estimated_runway_months_post_ipo} months` : "—"],
     ["Total Debt",            fmtM(fin.total_debt_usd_millions)],
     ["Debt Maturity",         _debtMatFmt],
-    ["Covenant Risk",         safeRender(fin.covenant_risk, {fallback:"—"})],
-    ["Off-Balance-Sheet",     safeRender(fin.off_balance_sheet_obligations, {fallback:"—"})],
+    ["Covenant Risk",         _sentBullets(safeRender(fin.covenant_risk, {fallback:"—"}))],
+    ["Off-Balance-Sheet",     _sentBullets(safeRender(fin.off_balance_sheet_obligations, {fallback:"—"}))],
     ["A/R vs Rev Growth",     fin.ar_vs_revenue_growth_flag ? `<span style="color:var(--amber);font-weight:600">⚠ A/R growing faster than revenue</span>` : "No divergence flagged"],
   ];
   const segs = (fin.segments || []).filter(s => s.segment_name);
@@ -2065,9 +2073,9 @@ function renderMemo(m) {
       </div>` : "";
   const condHtml = uwHtml || condSummaryHtml || passHtml;
 
-  // Score adjustments note (RF-20 penalty etc.)
+  // Score adjustments note — supports both {trigger,description} and legacy {rule,penalty} schemas
   const adjNote = (scores.adjustments || []).length > 0
-    ? `<div class="score-adj-note">⚠ Score adjusted: ${scores.adjustments.map(a => `${a.rule} (${a.penalty} pts)`).join("; ")}</div>`
+    ? `<div class="score-adj-note">⚠ Score adjusted: ${scores.adjustments.map(a => `${a.trigger || a.rule || "Adj"} — ${a.description || (a.penalty != null ? a.penalty + " pts" : "")}`).join("; ")}</div>`
     : "";
 
   // ── Build Proceeds tab content ──────────────────────────────────────────
@@ -2170,7 +2178,7 @@ function renderMemo(m) {
     _coverAlerts.push(`<span class="cover-alert cover-alert-red">GOING CONCERN \u2014 ${_gcType}</span>`);
   }
   if ((scores.adjustments || []).length > 0) {
-    const _adjTxt = scores.adjustments.map(a => `${a.rule} (${a.penalty}\u202fpts)`).join("; ");
+    const _adjTxt = scores.adjustments.map(a => `${a.trigger || a.rule || "Adj"} — ${a.description || (a.penalty != null ? a.penalty + "\u202fpts" : "")}`).join("; ");
     _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x26A0; Score Adj: ${_adjTxt}</span>`);
   }
   const _coverAlertsHtml = _coverAlerts.length > 0
@@ -2322,13 +2330,20 @@ function renderMemo(m) {
       ${m.macro_sector_context ? `<div class="memo-section">
         <h3><span class="section-num">12</span> Macro &amp; Sector Context</h3>
         ${(() => {
-          const mc = m.macro_sector_context;
+          let mc = m.macro_sector_context;
+          // If mc is a JSON-encoded object string, parse it first
+          if (typeof mc === "string") {
+            try { const _p = JSON.parse(mc); if (_p && typeof _p === "object") mc = _p; }
+            catch (e) { return `<p class="memo-prose">${mc}</p>`; }
+          }
           if (typeof mc === "string") return `<p class="memo-prose">${mc}</p>`;
           // Object: render thesis + bull/bear case + timing
-          const thesis    = mc.sector_thesis    || mc.overview || mc.description || "";
-          const timing    = mc.market_timing    || "";
-          const bullCase  = (mc.bull_case || mc.sector_tailwinds || mc.tailwinds || []).filter(Boolean);
-          const bearCase  = (mc.bear_case || mc.sector_headwinds || mc.headwinds || []).filter(Boolean);
+          // Support both plural (sector_tailwinds) and singular (sector_tailwind) keys
+          const _toArr = v => !v ? [] : Array.isArray(v) ? v : [v];
+          const thesis    = mc.sector_thesis || mc.overview || mc.description || mc.macro_sensitivity || "";
+          const timing    = mc.market_timing || "";
+          const bullCase  = _toArr(mc.bull_case || mc.sector_tailwinds || mc.sector_tailwind || mc.tailwinds).filter(Boolean);
+          const bearCase  = _toArr(mc.bear_case || mc.sector_headwinds || mc.sector_headwind || mc.headwinds).filter(Boolean);
           return [
             thesis  ? `<p class="memo-prose">${thesis}</p>` : "",
             timing  ? `<p class="memo-prose" style="margin-top:8px"><strong>Market Timing:</strong> ${timing}</p>` : "",
@@ -2490,7 +2505,8 @@ function buildSection11(m) {
 function buildSection12(m) {
   // Support both legacy flat array (m.comparable_ipos) and new nested schema (m.comparable_ipo_performance.comparable_ipos)
   const _cipPerf = m.comparable_ipo_performance || {};
-  const _rawComps = m.comparable_ipos || _cipPerf.comparable_ipos || [];
+  // Also support recent_comps key used by some Opus schema versions
+  const _rawComps = m.comparable_ipos || _cipPerf.comparable_ipos || _cipPerf.recent_comps || [];
   // Normalize field aliases per schema version
   const allComps = _rawComps.filter(c => c.company).map(c => ({
     company:             c.company,
@@ -2499,11 +2515,11 @@ function buildSection12(m) {
     comp_type:           c.comp_type,
     // old schema: offer_price / new schema: ipo_price
     offer_price:         c.offer_price ?? c.ipo_price,
-    // old schema: first_day_pop_pct / new schema: first_day_return_pct
-    first_day_pop_pct:   c.first_day_pop_pct ?? c.first_day_return_pct,
-    // old schema: current_vs_offer_pct / new schema: current_vs_ipo_pct
-    current_vs_offer_pct: c.current_vs_offer_pct ?? c.current_vs_ipo_pct,
-    notes:               c.notes,
+    // old schema: first_day_pop_pct / new: first_day_return_pct / Opus variant: day1_return_pct
+    first_day_pop_pct:   c.first_day_pop_pct ?? c.first_day_return_pct ?? c.day1_return_pct,
+    // old schema: current_vs_offer_pct / new: current_vs_ipo_pct / Opus variant: 90day_return_pct
+    current_vs_offer_pct: c.current_vs_offer_pct ?? c.current_vs_ipo_pct ?? c["90day_return_pct"],
+    notes:               c.notes || c.relevance,
   }));
 
   const primary   = allComps.filter(c => c.comp_type === "primary_ipo_comp");
@@ -2541,8 +2557,8 @@ function buildSection12(m) {
     ? primaryBlock + secondaryBlock
     : `<p style="font-size:12px;color:var(--text-dim);margin-top:4px">No comparable IPO data available.</p>`;
 
-  // Narrative fields from new schema
-  const _analysis = _cipPerf.analysis || "";
+  // Narrative fields from new schema — also support ipo_market_assessment key
+  const _analysis = _cipPerf.analysis || _cipPerf.ipo_market_assessment || "";
   const _sectorEnv = _cipPerf.sector_ipo_environment || "";
   const narrativeBlock = (_analysis || _sectorEnv) ? `
     <div style="margin-top:14px">
@@ -2660,7 +2676,11 @@ function buildSection16(m) {
     ];
     return namedKeys.map(function(pair) {
       var key = pair[0], label = pair[1], v = ap[key];
-      if (!v || typeof v !== 'object') return null;
+      if (!v) return null;
+      // Opus may return a plain string narrative instead of a structured object
+      if (typeof v === 'string') {
+        return { category: label, key: key, description: v, assessment: "", earnings_impact: "", risk_rating: "" };
+      }
       return {
         category:       label,
         key:            key,
@@ -2743,9 +2763,9 @@ function buildSection16(m) {
       }).join("")
     : `<tr><td colspan="2" style="color:var(--text-dim);font-style:italic;padding:12px 10px">No accounting items available.</td></tr>`;
 
+  // RF-25 banner suppressed here — RF banners belong exclusively in Section 04 (Risk & Red Flags)
   return `<div class="memo-section">
     <h3><span class="section-num">18</span> Accounting Practices</h3>
-    ${rf25Banner}
     ${scoreBlock}
     ${preRevenueNote}
     <table class="acct-table">
@@ -2773,9 +2793,13 @@ function buildSection17(m) {
   if (!esg) return "";
 
   const composite = esg.composite_score;
-  const E = esg.environmental || {};
-  const S = esg.social        || {};
-  const G = esg.governance    || {};
+  // Opus may return pillar as a plain string narrative; normalize to object shape
+  const _normPillar = v => typeof v === 'string'
+    ? { score: null, highlights: [], gaps: [], narrative: v }
+    : (v || {});
+  const E = _normPillar(esg.environmental);
+  const S = _normPillar(esg.social);
+  const G = _normPillar(esg.governance);
 
   const scoreCls = v => v == null ? "esg-score-mid"
                       : v >= 70   ? "esg-score-high"
@@ -2804,6 +2828,7 @@ function buildSection17(m) {
     const pct   = score != null ? Math.min(100, Math.max(0, score)) : 0;
     const hl    = (data.highlights || []).slice(0, 4);
     const gaps  = (data.gaps       || []).slice(0, 4);
+    const narr  = data.narrative   || "";
     return `<div class="esg-pillar">
       <div class="esg-pillar-header">
         <span class="esg-pillar-letter ${scoreCls(score)}">${letter}</span>
@@ -2813,6 +2838,7 @@ function buildSection17(m) {
       <div class="esg-bar-track"><div class="esg-bar-fill ${barCls(score)}" style="width:${pct}%"></div></div>
       ${hl.length   ? `<div class="esg-list-label">Disclosed</div><ul class="esg-ul">${hl.map(x => `<li>${x}</li>`).join("")}</ul>`   : ""}
       ${gaps.length ? `<div class="esg-list-label">Gaps</div><ul class="esg-ul gaps">${gaps.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+      ${narr && !hl.length && !gaps.length ? `<p style="font-size:11px;color:var(--text-dim);line-height:1.6;margin:6px 0 0">${narr}</p>` : ""}
     </div>`;
   };
 
@@ -3226,6 +3252,27 @@ function validateMemo(memo) {
         "— expected", c.type, "got", actual + ":", v);
     }
   });
+  // Fix #1: warn on malformed scores.adjustments entries (missing trigger/rule)
+  var adjs = (memo.scores || {}).adjustments || [];
+  adjs.forEach(function(a, i) {
+    if (!a.trigger && !a.rule) console.warn("[validateMemo] scores.adjustments["+i+"] missing trigger/rule field — will render as 'Adj'");
+  });
+  // Fix #2: warn on missing underwriting_type
+  if (!memo.underwriting_type) {
+    console.warn("[validateMemo] MISSING: underwriting_type — check Underwriting/Plan of Distribution section of filing");
+  }
+  // Fix #4: warn on empty comparable IPO data
+  var _cipPerf = memo.comparable_ipo_performance || {};
+  var _hasComps = (memo.comparable_ipos || _cipPerf.comparable_ipos || _cipPerf.recent_comps || []).length > 0;
+  if (!_hasComps) {
+    console.warn("[validateMemo] EMPTY: no comparable IPO data found in comparable_ipos or comparable_ipo_performance — Section 16 will show placeholder");
+  }
+  // Fix #8: note dual-source confirmation status
+  var _flags = memo.red_flags || [];
+  var _dualCount = _flags.filter(function(f) { return typeof f === "object" && f.dual_source_confirmed; }).length;
+  if (_flags.length > 0 && _dualCount === 0) {
+    console.info("[validateMemo] NOTE: no dual_source_confirmed flags — cross_reference_flags() requires a /diligence pass to populate badges");
+  }
   // Warn about [object Object] risks in free-text fields
   ["business_overview","macro_sector_context"].forEach(function(k) {
     var v = memo[k];

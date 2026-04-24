@@ -332,6 +332,35 @@ When adding or editing a section renderer:
    - `m.conditions` → `m.conditional_underwrite_conditions`
    - `val.public_comps` (strings) → `val.comparable_companies` (objects)
 
+## RENDERING RULES (ipo_screener_app.html)
+
+### RF Banner Rule (ENFORCED)
+RF-style alert banners belong EXCLUSIVELY in Section 04 (Risk & Red Flags).
+Section renderers buildSection10 through buildSection17 must NOT include rf-banner divs.
+The rf25Banner in buildSection16 (Accounting Practices) was removed — RF-25 already
+appears in the Section 04 flag list. Do not re-add it.
+
+### Comp Selection Exclusion Rule (ENFORCED in system prompt)
+Do NOT use semiconductor, hardware, REIT, or colocation companies as comparables
+unless the subject company's SIC code and primary revenue model match that sector.
+For AI infrastructure / cloud GPU providers, use cloud services or SaaS comps.
+Always populate `comp_selection_rationale` explaining each comp choice.
+
+### Multi-Sentence Financial Fields
+`covenant_risk` and `off_balance_sheet_obligations` are rendered via `_sentBullets()`:
+splits at period/semicolon boundaries into a `<ul>` list for readability.
+Apply `_sentBullets(safeRender(value))` to any new financial narrative table row
+that may contain multiple sentences.
+
+### Schema Flexibility Rules (safeRender)
+- `esg_disclosure.environmental/social/governance` may be strings (narrative) or objects
+  → normalized via `_normPillar()` in buildSection17
+- `accounting_practices.*` named keys may be strings or objects → buildSection16 fallback
+  handles both; string → description only, no risk_rating badge
+- `macro_sector_context` may be object or JSON-string-of-object → try JSON.parse first
+- `comparable_ipo_performance.recent_comps` is an alias for `.comparable_ipos`
+- `comparable_ipo_performance.ipo_market_assessment` is an alias for `.analysis`
+
 ## COMMON ISSUES & FIXES
 - Blank pages in PDF: check for .memo-header-wrap not hidden in @media print
 - damBench temporal dead zone: define const damBench BEFORE const valSection

@@ -450,6 +450,17 @@ Analyze the following from the filing text provided:
       median as a positive signal for a GAAP-loss company. The correct primary metric for
       unprofitable companies is EV/EBITDA or EV/Adj.EBITDA. A discount is EXPECTED and
       does not constitute an attractive valuation.
+    - COMP SELECTION EXCLUSIONS: Do NOT use the following as comparable public companies unless
+      the subject company's SIC code or primary revenue model squarely matches that sector:
+        • Semiconductor / chip designers (Nvidia, AMD, Broadcom, Qualcomm, Marvell, etc.)
+        • Hardware / device manufacturers (Dell, HP, Lenovo, NetApp, etc.)
+        • REITs or real estate investment trusts of any kind
+        • Data center colocation operators (Equinix, Digital Realty, Iron Mountain, etc.)
+          — unless the subject company's PRIMARY revenue is from colocation space rental
+      For AI infrastructure / cloud GPU / HPC providers, select comps from cloud services,
+      managed hosting, or vertical SaaS companies with recurring revenue models.
+      Always populate comp_selection_rationale explaining why each comp was chosen and
+      confirming no excluded sector types were used.
     - SOURCE VERIFICATION: For every market statistic cited in the valuation narrative
       (sector multiples, comp company revenues, market share data), identify whether the
       source is tier_1 (WSJ, Bloomberg, Reuters, FT, NYT), tier_2 (PitchBook, Damodaran,
