@@ -437,7 +437,7 @@
     flex-direction: column;
   }
   .memo-header-wrap {
-    padding: 32px 40px 0;
+    padding: 0;          /* cover-firm-bar goes edge-to-edge; cover-main handles inner padding */
     flex-shrink: 0;
   }
   .memo-empty {
@@ -531,18 +531,140 @@
     padding: 1px 7px; border-radius: 3px; white-space: nowrap;
   }
 
-  /* Cover page executive summary block */
-  .cover-exec-summary {
-    margin-top: 20px;
-    padding: 16px 20px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+  /* ── Professional IB deal cover page ─────────────────────────────────── */
+
+  /* Firm header bar — edge to edge, gold bottom rule */
+  .cover-firm-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 36px;
+    background: var(--surface);
+    border-bottom: 2px solid var(--gold-dim);
   }
-  .cover-exec-label {
-    font-size: 10px; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+  .cover-firm-name {
+    font-size: 10px; font-weight: 700; letter-spacing: .22em;
+    text-transform: uppercase; color: var(--gold);
   }
+  .cover-firm-sub {
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  /* Main content padding zone */
+  .cover-main { padding: 24px 36px 0; }
+
+  /* Header row: company name (left) | rec badge + score (right) */
+  .cover-header-row {
+    display: flex; justify-content: space-between;
+    align-items: flex-start; margin-bottom: 16px;
+  }
+  .cover-co-block { flex: 1; min-width: 0; }
+  .cover-co-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 30px; font-weight: 700; color: var(--text);
+    line-height: 1.15; margin-bottom: 5px;
+  }
+  .cover-co-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-dim); letter-spacing: .04em;
+  }
+  .cover-right-block {
+    display: flex; flex-direction: column; align-items: flex-end;
+    gap: 8px; flex-shrink: 0; padding-left: 28px;
+  }
+  .cover-rec-pill {
+    font-size: 10px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; padding: 6px 18px; border-radius: 3px;
+    white-space: nowrap;
+  }
+  .cover-score-display { text-align: right; line-height: 1; }
+  .cover-score-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 38px; font-weight: 700;
+  }
+  .cover-score-slash {
+    font-size: 14px; color: var(--text-dim); margin-left: 1px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .cover-score-lbl {
+    font-size: 8px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-dim); margin-top: 3px;
+  }
+
+  /* Thin gold rule separator */
+  .cover-gold-rule {
+    border: none; border-top: 1px solid var(--gold-dim);
+    margin: 0 0 16px;
+  }
+
+  /* Two-column body: metadata (left) | dimension bars (right) */
+  .cover-body-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 0 32px; margin-bottom: 14px; align-items: start;
+  }
+  .cover-meta-tbl { width: 100%; border-collapse: collapse; }
+  .cover-meta-tbl tr { border-bottom: 1px solid var(--border); }
+  .cover-meta-tbl tr:last-child { border-bottom: none; }
+  .cover-meta-tbl td { padding: 7px 0; font-size: 12px; vertical-align: top; }
+  .cmt-lbl {
+    font-size: 9px; color: var(--text-dim); letter-spacing: .1em;
+    text-transform: uppercase; width: 100px; padding-right: 10px;
+  }
+  .cmt-val { color: var(--text); font-weight: 500; }
+
+  /* Dimension score bars */
+  .cover-dim-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 0; border-bottom: 1px solid var(--border);
+  }
+  .cover-dim-row:last-child { border-bottom: none; }
+  .cover-dim-label {
+    font-size: 10px; color: var(--text-dim); flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cover-dim-w {
+    font-size: 9px; color: var(--text-dim); width: 26px;
+    text-align: right; flex-shrink: 0;
+  }
+  .cover-dim-track {
+    width: 60px; height: 3px; background: var(--border2);
+    border-radius: 2px; overflow: hidden; flex-shrink: 0;
+  }
+  .cover-dim-fill { height: 100%; border-radius: 2px; }
+  .cover-dim-score {
+    font-size: 11px; font-weight: 600; width: 26px; text-align: right;
+    font-family: 'JetBrains Mono', monospace; flex-shrink: 0;
+  }
+
+  /* Alerts strip — horizontal row of labeled badges */
+  .cover-alerts-row {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;
+  }
+  .cover-alert {
+    font-size: 9px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; padding: 4px 10px; border-radius: 3px;
+    white-space: nowrap;
+  }
+  .cover-alert-blue  { color: var(--accent); background: rgba(59,130,246,.1);  border: 1px solid rgba(59,130,246,.3);  }
+  .cover-alert-amber { color: var(--amber);  background: rgba(232,169,53,.1);   border: 1px solid rgba(232,169,53,.3);  }
+  .cover-alert-red   { color: var(--red);    background: rgba(224,82,82,.1);    border: 1px solid rgba(224,82,82,.3);   }
+
+  /* Executive summary box */
+  .cover-exec-box {
+    border-top: 2px solid var(--gold-dim); padding-top: 14px;
+  }
+  .cover-exec-lbl {
+    font-size: 8px; font-weight: 700; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--gold-dim); margin-bottom: 10px;
+    font-variant: small-caps;
+  }
+  .cover-exec-body {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 12.5px; line-height: 1.85; color: var(--text-mid);
+  }
+
+  /* Legacy cover classes kept for backward compat (no longer rendered) */
+  .cover-exec-summary { display: none; }
+  .cover-exec-label   { display: none; }
 
   /* Amendment banner */
   .amendment-banner {
@@ -795,11 +917,32 @@
     .memo-tabs { display: none !important; }
     /* Cover page ends after memo-header-wrap; sections start on page 2 */
     .memo-header-wrap { page-break-after: always; break-after: page; }
-    .score-gauge-row { page-break-before: auto; break-before: auto; }
     .memo-section { page-break-inside: avoid; }
-    /* Cover exec summary — light border in print */
-    .cover-exec-summary { background: #f7f6f4 !important; border-color: #ccc !important; }
-    .cover-exec-label { color: #666 !important; }
+
+    /* ── Cover page print overrides ── */
+    .cover-firm-bar {
+      background: #f2efe9 !important;
+      border-bottom-color: #8a6e30 !important;
+    }
+    .cover-firm-name { color: #8a6e30 !important; }
+    .cover-firm-sub  { color: #888 !important; }
+    .cover-gold-rule { border-top-color: #8a6e30 !important; }
+    .cover-exec-box  { border-top-color: #8a6e30 !important; }
+    .cover-exec-lbl  { color: #8a6e30 !important; }
+    .cover-dim-track { background: #ddd !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .cover-dim-fill  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .cover-co-name   { color: #0d1117 !important; }
+    .cover-co-sub    { color: #666 !important; }
+    .cmt-lbl         { color: #888 !important; }
+    .cmt-val         { color: #111 !important; }
+    .cover-dim-label { color: #666 !important; }
+    .cover-dim-w     { color: #888 !important; }
+    .cover-meta-tbl tr { border-bottom-color: #ddd !important; }
+    .cover-dim-row     { border-bottom-color: #ddd !important; }
+    .cover-exec-body   { color: #333 !important; }
+    /* Force alert badge colors through in print */
+    .cover-alert { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Score number inherits color from inline style — no override needed */
     /* Use of Proceeds bar — force colors and layout for print */
     .proceeds-bar-wrap { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 12px 0 8px; }
     .proceeds-bar { display: flex !important; height: 20px !important; overflow: hidden !important; width: 100% !important; border-radius: 3px !important; }
@@ -2013,57 +2156,101 @@ function renderMemo(m) {
     ${uop.proceeds_narrative ? `<p class="proceeds-narrative">${uop.proceeds_narrative}</p>` : ""}
   `;
 
-  // ── Shared header (outside tabs) ───────────────────────────────────────
+  // ── Cover page alerts strip ─────────────────────────────────────────────
+  const _coverAlerts = [];
+  if (m.is_amendment) {
+    const _priorTxt = m.prior_memo_date ? ` \u00b7 Prior: ${m.prior_memo_date}` : "";
+    _coverAlerts.push(`<span class="cover-alert cover-alert-blue">AMENDED S-1/A${_priorTxt}</span>`);
+  }
+  if (m.leveraged_issuer_flag) {
+    _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x26A0; LEVERAGED ISSUER \u2014 FHR weight 20%</span>`);
+  }
+  if (m.going_concern) {
+    const _gcType = m.going_concern_type === "capital_deficient" ? "Capital-Deficient" : "Structural";
+    _coverAlerts.push(`<span class="cover-alert cover-alert-red">GOING CONCERN \u2014 ${_gcType}</span>`);
+  }
+  if ((scores.adjustments || []).length > 0) {
+    const _adjTxt = scores.adjustments.map(a => `${a.rule} (${a.penalty}\u202fpts)`).join("; ");
+    _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x26A0; Score Adj: ${_adjTxt}</span>`);
+  }
+  const _coverAlertsHtml = _coverAlerts.length > 0
+    ? `<div class="cover-alerts-row">${_coverAlerts.join("")}</div>` : "";
+
+  // ── Dimension bars for cover (thresholds: green ≥7.0, amber 5.0–6.9, red <5.0) ──
+  const _coverDims = dims.map(d => {
+    const v   = d.val;
+    const pct = v != null ? (v / 10 * 100).toFixed(0) + "%" : "0%";
+    const col = v >= 7.0 ? "var(--green)" : v >= 5.0 ? "var(--amber)" : "var(--red)";
+    return `<div class="cover-dim-row">
+      <span class="cover-dim-label">${d.label}</span>
+      <span class="cover-dim-w">${d.w}%</span>
+      <div class="cover-dim-track"><div class="cover-dim-fill" style="width:${pct};background:${col};-webkit-print-color-adjust:exact;print-color-adjust:exact"></div></div>
+      <span class="cover-dim-score" style="color:${col}">${v != null ? v.toFixed(1) : "\u2014"}</span>
+    </div>`;
+  }).join("");
+
+  // ── Underwriting type string (shared between old and new cover) ──
+  const _uwTypeStr = (function() {
+    var ut  = m.underwriting_type || "Not Disclosed";
+    if (ut !== "Best Efforts") return ut;
+    var sub = m.underwriting_subtype || "Standard";
+    if (sub === "Mini-Max") {
+      var min = m.underwriting_minimum_raise_usd != null
+        ? " \u2014 Min: $" + m.underwriting_minimum_raise_usd + "M" : "";
+      return "Best Efforts: Mini-Max" + min;
+    }
+    return "Best Efforts: " + sub;
+  })();
+
+  // ── Professional IB deal cover ───────────────────────────────────────────
   const sharedHeader = `
-    <div class="memo-header">
-      <div class="memo-header-top">
-        <div>
-          <div class="memo-company">${m.company_name || "—"}</div>
-          <div class="memo-ticker">${[m.proposed_ticker, m.exchange].filter(Boolean).join(" · ") || "Ticker TBD"}</div>
+    <div class="cover-firm-bar">
+      <span class="cover-firm-name">Regal Securities</span>
+      <span class="cover-firm-sub">Equity Capital Markets &nbsp;&middot;&nbsp; IPO Due Diligence &nbsp;&middot;&nbsp; Internal Only</span>
+    </div>
+
+    <div class="cover-main">
+      <div class="cover-header-row">
+        <div class="cover-co-block">
+          <div class="cover-co-name">${m.company_name || "\u2014"}</div>
+          <div class="cover-co-sub">${[m.proposed_ticker, m.exchange].filter(Boolean).join(" \u00b7 ") || "Ticker / Exchange TBD"}</div>
         </div>
-        <span class="memo-rec-large rec-${m.recommendation}" style="color:${recColor};background:${recColor}18;border:1px solid ${recColor}40">
-          ${(m.recommendation || "—").replace(/_/g, " ")}
-        </span>
+        <div class="cover-right-block">
+          <span class="cover-rec-pill" style="color:${recColor};background:${recColor}15;border:1px solid ${recColor}35">
+            ${(m.recommendation || "\u2014").replace(/_/g, " ")}
+          </span>
+          <div class="cover-score-display">
+            <span class="cover-score-num" style="color:${gaugeColor}">${total != null ? total.toFixed(0) : "\u2014"}</span><span class="cover-score-slash">/100</span>
+            <div class="cover-score-lbl">Composite Score</div>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div class="score-gauge-row">
-      <div class="gauge-circle">
-        <svg viewBox="0 0 72 72" width="72" height="72">
-          <circle class="gauge-bg"   cx="36" cy="36" r="${gaugeR}"/>
-          <circle class="gauge-fill" cx="36" cy="36" r="${gaugeR}"
-            stroke="${gaugeColor}" stroke-dasharray="${gaugeC}" stroke-dashoffset="${gaugeFill}"/>
-        </svg>
-        <div class="gauge-label">${total != null ? total.toFixed(0) : "—"}</div>
+      <div class="cover-gold-rule"></div>
+
+      <div class="cover-body-grid">
+        <div class="cover-meta-col">
+          <table class="cover-meta-tbl">
+            <tr><td class="cmt-lbl">Sector</td>      <td class="cmt-val">${m.sector || "\u2014"}</td></tr>
+            <tr><td class="cmt-lbl">Offering</td>    <td class="cmt-val">${m.offering_size_usd_millions != null ? "$" + m.offering_size_usd_millions + "M" : "\u2014"}</td></tr>
+            <tr><td class="cmt-lbl">Price Range</td> <td class="cmt-val">${m.proposed_price_range || "\u2014"}</td></tr>
+            <tr><td class="cmt-lbl">Auditor</td>     <td class="cmt-val" style="${m.auditor_flag ? "color:var(--amber)" : ""}">${m.auditor || "\u2014"}</td></tr>
+            <tr><td class="cmt-lbl">Filed</td>       <td class="cmt-val">${m.filing_date || "\u2014"}</td></tr>
+            <tr><td class="cmt-lbl">Underwriting</td><td class="cmt-val">${_uwTypeStr}</td></tr>
+          </table>
+        </div>
+        <div class="cover-dims-col">
+          ${_coverDims}
+        </div>
       </div>
-      <div class="score-dimensions">${dimBars}</div>
+
+      ${_coverAlertsHtml}
+
+      ${m.executive_summary ? `<div class="cover-exec-box">
+        <div class="cover-exec-lbl">Executive Summary</div>
+        <div class="cover-exec-body">${m.executive_summary}</div>
+      </div>` : ""}
     </div>
-    ${adjNote}
-
-    <div class="memo-header-meta">
-      <div class="meta-item"><div class="meta-lbl">Sector</div><div class="meta-val">${m.sector || "—"}</div></div>
-      <div class="meta-item"><div class="meta-lbl">Offering</div><div class="meta-val">${m.offering_size_usd_millions != null ? "$"+m.offering_size_usd_millions+"M" : "—"}</div></div>
-      <div class="meta-item"><div class="meta-lbl">Price Range</div><div class="meta-val">${m.proposed_price_range || "—"}</div></div>
-      <div class="meta-item"><div class="meta-lbl">Auditor</div><div class="meta-val" style="${m.auditor_flag ? 'color:var(--amber)' : ''}">${m.auditor || "—"}</div></div>
-      <div class="meta-item"><div class="meta-lbl">Filed</div><div class="meta-val">${m.filing_date || "—"}</div></div>
-      <div class="meta-item"><div class="meta-lbl">Underwriting</div><div class="meta-val">${(function(){
-        var ut = m.underwriting_type || "Not Disclosed";
-        if (ut !== "Best Efforts") return ut;
-        var sub = m.underwriting_subtype || "Standard";
-        if (sub === "Mini-Max") {
-          var min = m.underwriting_minimum_raise_usd != null ? " — Minimum: $" + m.underwriting_minimum_raise_usd + "M" : "";
-          return "Best Efforts: Mini-Max" + min;
-        }
-        return "Best Efforts: " + sub;
-      })()}</div></div>
-    </div>
-
-    ${amendmentHtml}
-
-    ${m.executive_summary ? `<div class="cover-exec-summary">
-      <p class="cover-exec-label">Executive Summary</p>
-      <p class="memo-prose">${m.executive_summary}</p>
-    </div>` : ""}
   `;
 
   document.getElementById("memo-panel").innerHTML = `
