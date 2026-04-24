@@ -609,6 +609,34 @@
     padding: 1px 6px; border-radius: 3px; margin-left: 8px;
   }
 
+  /* Unit Economics KPI badge strip */
+  .ue-kpi-strip {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 16px 0 4px; padding: 12px 14px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .ue-kpi-strip-label {
+    width: 100%; font-size: 9px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px;
+  }
+  .ue-kpi-badge {
+    display: inline-flex; flex-direction: column; gap: 2px;
+    padding: 5px 10px; border-radius: 5px; font-size: 11px;
+    border: 1px solid; min-width: 80px; text-align: center;
+  }
+  .ue-kpi-badge .ue-label {
+    font-size: 9px; font-weight: 600; letter-spacing: .07em;
+    text-transform: uppercase; opacity: .8;
+  }
+  .ue-kpi-badge .ue-val {
+    font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 12px;
+  }
+  .ue-green  { background: rgba(46,204,138,.12); color: var(--green);  border-color: rgba(46,204,138,.25); }
+  .ue-amber  { background: rgba(232,169,53,.12);  color: var(--amber);  border-color: rgba(232,169,53,.25); }
+  .ue-red    { background: rgba(224,82,82,.12);   color: var(--red);    border-color: rgba(224,82,82,.25); }
+  .ue-dim    { background: var(--surface);         color: var(--text-dim); border-color: var(--border); }
+
   /* Disclaimer */
   .memo-disclaimer {
     font-size: 10px; color: var(--text-dim);
@@ -1473,11 +1501,6 @@ function renderMemo(m) {
     ["Debt Maturity",         _debtMatFmt],
     ["Covenant Risk",         safeRender(fin.covenant_risk, {fallback:"—"})],
     ["Off-Balance-Sheet",     safeRender(fin.off_balance_sheet_obligations, {fallback:"—"})],
-    ["SBC % Revenue",         fin.stock_based_comp_pct_revenue != null ? `${fin.stock_based_comp_pct_revenue}%` : "—"],
-    ["Rule of 40",            fin.rule_of_40_score != null ? `${fin.rule_of_40_score}` : "—"],
-    ["NRR",                   fin.nrr_pct != null ? `${fin.nrr_pct}%` : "—"],
-    ["CAC/LTV",               fin.cac_ltv_ratio != null ? `${fin.cac_ltv_ratio}` : "—"],
-    ["Deferred Rev Trend",    safeRender(fin.deferred_revenue_trend || fin.deferred_revenue_usd_millions, {fallback:"—"})],
     ["A/R vs Rev Growth",     fin.ar_vs_revenue_growth_flag ? `<span style="color:var(--amber);font-weight:600">⚠ A/R growing faster than revenue</span>` : "No divergence flagged"],
   ];
   const segs = (fin.segments || []).filter(s => s.segment_name);
@@ -1492,10 +1515,56 @@ function renderMemo(m) {
         <td style="text-align:right">${fmtM(s.fcf_usd_millions)}</td>
       </tr>`).join("")}</tbody>
     </table>` : "";
+
+  // ── Unit Economics KPI Badge Strip ──────────────────────────────────────────
+  // Benchmarks derived from SYSTEM_PROMPT rubric anchors and sector norms:
+  //   NRR:            green ≥110  | amber 90–110 | red <90
+  //   LTV/CAC:        green ≥3.0  | amber 1.5–3  | red <1.5   (higher = better)
+  //   Rule of 40:     green ≥40   | amber 20–40  | red <20
+  //   SBC % Revenue:  green ≤10   | amber 10–20  | red >20    (lower = better)
+  //   Deferred Rev:   green=growing | amber=stable | red=declining
+  const _ueBadge = (label, value, cls, display) =>
+    `<div class="ue-kpi-badge ${cls}"><span class="ue-label">${label}</span><span class="ue-val">${display}</span></div>`;
+
+  const _ueBadges = [];
+  if (fin.nrr_pct != null) {
+    const v = fin.nrr_pct;
+    const cls = v >= 110 ? "ue-green" : v >= 90 ? "ue-amber" : "ue-red";
+    _ueBadges.push(_ueBadge("NRR", v, cls, `${v}%`));
+  }
+  if (fin.cac_ltv_ratio != null) {
+    const v = fin.cac_ltv_ratio;
+    const cls = v >= 3.0 ? "ue-green" : v >= 1.5 ? "ue-amber" : "ue-red";
+    _ueBadges.push(_ueBadge("LTV/CAC", v, cls, `${v}x`));
+  }
+  if (fin.rule_of_40_score != null) {
+    const v = fin.rule_of_40_score;
+    const cls = v >= 40 ? "ue-green" : v >= 20 ? "ue-amber" : "ue-red";
+    _ueBadges.push(_ueBadge("Rule of 40", v, cls, `${v}`));
+  }
+  const _sbcPct = fin.stock_based_comp_pct_revenue ?? fin.sbc_pct_revenue ?? null;
+  if (_sbcPct != null) {
+    const v = _sbcPct;
+    const cls = v <= 10 ? "ue-green" : v <= 20 ? "ue-amber" : "ue-red";
+    _ueBadges.push(_ueBadge("SBC % Rev", v, cls, `${v}%`));
+  }
+  if (fin.deferred_revenue_trend && fin.deferred_revenue_trend !== "not_applicable") {
+    const t = fin.deferred_revenue_trend.toLowerCase();
+    const cls = t.startsWith("grow") ? "ue-green" : t.startsWith("stab") ? "ue-amber" : t.startsWith("decl") ? "ue-red" : "ue-dim";
+    _ueBadges.push(_ueBadge("Deferred Rev", t, cls, fin.deferred_revenue_trend));
+  }
+  const _ueSource = m.unit_econ_enriched ? ' <span class="live-badge" style="background:#3b82f620;color:#60a5fa;border-color:#3b82f640">/unit-econ</span>' : "";
+  const unitEconBadges = _ueBadges.length > 0
+    ? `<div class="ue-kpi-strip">
+        <div class="ue-kpi-strip-label">Unit Economics${_ueSource}</div>
+        ${_ueBadges.join("")}
+      </div>`
+    : "";
+
   const finTable = `<table class="fin-table">
     <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
     <tbody>${finRows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
-  </table>${segTable}`;
+  </table>${segTable}${unitEconBadges}`;
 
   // Valuation section — live comps + Damodaran benchmarks
   const liveCompsData = val.live_comps_data || [];

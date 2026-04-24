@@ -165,6 +165,16 @@ Analyze the following from the filing text provided:
     - Off-balance-sheet obligations
     - Auditor identity (flag non-Big 4 / non-recognized mid-tier)
     - Any auditor qualification, emphasis of matter, going concern note
+    - UNIT ECONOMICS PRE-FETCH: If [EXTERNAL UNIT ECONOMICS DATA — source: /unit-economics]
+      is provided in the user message, copy those pre-computed values directly into financials{}:
+        nrr_pct                  → financials.nrr_pct
+        cac_ltv_ratio            → financials.cac_ltv_ratio  (LTV/CAC; higher is better)
+        rule_of_40               → financials.rule_of_40_score
+        sbc_pct_revenue          → financials.stock_based_comp_pct_revenue
+        deferred_revenue_trend   → financials.deferred_revenue_trend
+      Prefer the pre-fetched values over your own calculation. If a value is null in the
+      pre-fetch (metric not disclosed or not applicable), attempt to derive it from the
+      filing text; otherwise leave null.
 
 [F] CAPITALIZATION & OWNERSHIP
     - Pre/post-IPO ownership table
@@ -1575,6 +1585,81 @@ def fetch_external_comps(client: anthropic.Anthropic, company_name: str,
     return enriched
 
 
+def fetch_unit_economics(client: anthropic.Anthropic, company_name: str,
+                          sector: str, filing_text: str) -> dict:
+    """
+    Pre-analysis unit economics step — mirrors the /unit-economics slash command workflow.
+
+    Sends the first 20k characters of the S-1 (covers MD&A and financial highlights) to
+    COMPS_MODEL (Sonnet) with a targeted extraction prompt. Returns a dict of five metrics:
+      nrr_pct              — Net Revenue Retention %
+      cac_ltv_ratio        — LTV/CAC ratio (higher = better; e.g. 4.2 means LTV is 4.2× CAC)
+      rule_of_40           — Revenue growth % + Gross margin %
+      sbc_pct_revenue      — Stock-Based Compensation as % of Revenue
+      deferred_revenue_trend — "growing" | "stable" | "declining" | "not_applicable"
+
+    Falls back to empty dict on any error. Null values indicate the metric was not
+    disclosed or is not applicable to this business model.
+    """
+    filing_snippet = filing_text[:20_000]
+    prompt = (
+        f"You are an expert IPO analyst performing unit economics analysis per the "
+        f"/unit-economics workflow.\n\n"
+        f"Company: {company_name}\n"
+        f"Sector: {sector or 'unknown'}\n\n"
+        "Extract the following unit economics metrics from the SEC S-1 filing text below. "
+        "Return null for any metric that is not disclosed, cannot be reliably derived from "
+        "the text, or is not applicable to this business model (e.g. NRR for a "
+        "pure-transactional company with no subscription revenue).\n\n"
+        "Return ONLY a valid JSON object — no markdown, no explanation:\n"
+        "{\n"
+        '  "nrr_pct": number|null,\n'
+        '  "cac_ltv_ratio": number|null,\n'
+        '  "rule_of_40": number|null,\n'
+        '  "sbc_pct_revenue": number|null,\n'
+        '  "deferred_revenue_trend": "growing"|"stable"|"declining"|"not_applicable"|null\n'
+        "}\n\n"
+        "Definitions:\n"
+        "  nrr_pct             — Net Revenue Retention %, also called Dollar-Based Net "
+        "Expansion Rate. Express as a whole number (e.g. 118, not 1.18).\n"
+        "  cac_ltv_ratio       — LTV divided by CAC (higher is better). If only CAC/LTV is "
+        "disclosed, invert it. If LTV/CAC = 4.2, return 4.2.\n"
+        "  rule_of_40          — Revenue growth % (YoY) PLUS Gross margin %. Compute if "
+        "both figures are available in the text; otherwise null.\n"
+        "  sbc_pct_revenue     — Stock-Based Compensation as a percentage of TTM revenue. "
+        "Extract from income statement footnotes or operating expense breakdown.\n"
+        "  deferred_revenue_trend — Direction of deferred revenue balance change over the "
+        "most recent reported period. Use 'not_applicable' for non-subscription models.\n\n"
+        "Do NOT fabricate numbers. Only return values you can directly extract or compute "
+        "from the text below.\n\n"
+        f"FILING TEXT (first 20,000 characters):\n{filing_snippet}\n"
+    )
+    try:
+        resp = client.messages.create(
+            model=COMPS_MODEL,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+        result = json.loads(raw)
+        if not isinstance(result, dict):
+            return {}
+        # Sanitize — keep only the five expected keys with correct types
+        clean = {}
+        for k in ("nrr_pct", "cac_ltv_ratio", "rule_of_40", "sbc_pct_revenue"):
+            v = result.get(k)
+            clean[k] = float(round(v, 2)) if isinstance(v, (int, float)) else None
+        drt = result.get("deferred_revenue_trend")
+        valid_drt = {"growing", "stable", "declining", "not_applicable"}
+        clean["deferred_revenue_trend"] = drt if isinstance(drt, str) and drt in valid_drt else None
+        log.info(f"Unit economics fetched for {company_name}: {clean}")
+        return clean
+    except Exception as e:
+        log.warning(f"fetch_unit_economics failed for {company_name}: {e}")
+        return {}
+
+
 def analyze_filing(client: anthropic.Anthropic, filing: dict) -> dict:
     """
     Analyze a single S-1 filing with Claude Opus.
@@ -1652,7 +1737,7 @@ Your additional tasks for this amendment:
                 "Set is_amendment=true and prior_memo_date=null."
             )
 
-    # ── External comps pre-fetch — runs before Opus, injected as context ──
+    # ── External comps pre-fetch (/comps — runs before Opus) ──────────────────
     external_comps = []
     try:
         external_comps = fetch_external_comps(
@@ -1660,6 +1745,32 @@ Your additional tasks for this amendment:
         )
     except Exception as e:
         log.warning(f"External comps fetch failed for {company}: {e}")
+
+    # ── Unit economics pre-fetch (/unit-economics — runs before Opus) ─────────
+    unit_econ = {}
+    try:
+        unit_econ = fetch_unit_economics(
+            client, company, sic_description or "", filing_text
+        )
+    except Exception as e:
+        log.warning(f"External unit economics fetch failed for {company}: {e}")
+
+    ue_context = ""
+    if unit_econ:
+        def _ue_fmt(v):
+            return str(round(v, 2)) if isinstance(v, (int, float)) else "null"
+        ue_lines = [
+            f"  nrr_pct:               {_ue_fmt(unit_econ.get('nrr_pct'))}",
+            f"  cac_ltv_ratio:         {_ue_fmt(unit_econ.get('cac_ltv_ratio'))}",
+            f"  rule_of_40:            {_ue_fmt(unit_econ.get('rule_of_40'))}",
+            f"  sbc_pct_revenue:       {_ue_fmt(unit_econ.get('sbc_pct_revenue'))}",
+            f"  deferred_revenue_trend: {unit_econ.get('deferred_revenue_trend') or 'null'}",
+        ]
+        ue_context = (
+            "\n[EXTERNAL UNIT ECONOMICS DATA — source: /unit-economics]\n"
+            + "\n".join(ue_lines)
+            + "\nCopy these values into financials{} per the instructions in your system prompt.\n"
+        )
 
     comps_context = ""
     if external_comps:
@@ -1691,7 +1802,7 @@ Filing date: {filing_date}
 Accession number: {accession}
 CIK: {cik}
 {sic_line}
-{amendment_context}{comps_context}
+{amendment_context}{ue_context}{comps_context}
 FILING TEXT (may be truncated to ~80,000 characters):
 {filing_text}
 
@@ -1716,6 +1827,22 @@ Set filing_url to: {edgar_url}
         memo.setdefault("is_amendment", form_type == "S-1/A")
         memo.setdefault("prior_memo_date", None)
         memo.setdefault("amendment_changes_summary", None)
+        # Back-fill unit economics into financials{} if pre-fetch succeeded
+        # (Opus should have already used these values, but this ensures schema integrity)
+        if unit_econ:
+            fin = memo.setdefault("financials", {})
+            _ue_map = {
+                "nrr_pct":                    "nrr_pct",
+                "cac_ltv_ratio":              "cac_ltv_ratio",
+                "rule_of_40":                 "rule_of_40_score",
+                "sbc_pct_revenue":            "stock_based_comp_pct_revenue",
+                "deferred_revenue_trend":     "deferred_revenue_trend",
+            }
+            for ue_key, fin_key in _ue_map.items():
+                fetched = unit_econ.get(ue_key)
+                if fetched is not None and fin.get(fin_key) is None:
+                    fin[fin_key] = fetched
+            memo["unit_econ_enriched"] = True
         memo = enrich_valuation_with_live_comps(memo)
         memo = enrich_with_damodaran(memo)
         memo = apply_scoring_adjustments(memo)
