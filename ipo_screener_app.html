@@ -1502,30 +1502,112 @@ function renderMemo(m) {
   const dam = m.damodaran_comps || {};
   const liveFlag = m.live_comps_enriched ? `<span class="live-badge">LIVE</span>` : "";
   const damFlag  = dam.matched_industry   ? `<span class="live-badge" style="background:#6a5acd20;color:#9b8eea;border-color:#9b8eea40;margin-left:4px">DAM</span>` : "";
-  // Comparable companies: support both liveCompsData (yfinance) and val.comparable_companies (static)
+  // Comparable companies: support liveCompsData (yfinance-enriched), val.public_comps (object array from /comps),
+  // val.comparable_companies (static), or legacy string array via public_comps
   const _staticComps = (val.comparable_companies || []).filter(c => c && (c.ticker || c.company));
-  const _allCompsData = liveCompsData.length > 0 ? liveCompsData : _staticComps;
+  const _pubCompsRaw  = (val.public_comps || []);
+  const _pubCompsObjs = _pubCompsRaw
+    .filter(c => c && typeof c === "object" && (c.ticker || c.company))
+    .map(c => ({
+      ...c,
+      ev_revenue_multiple: c.ev_revenue_multiple ?? c.ev_revenue ?? null,
+      ev_ebitda_multiple:  c.ev_ebitda_multiple  ?? c.ev_ebitda  ?? null,
+    }));
+  // Priority: live yfinance data > /comps objects > static comparable_companies
+  const _allCompsData = liveCompsData.length > 0 ? liveCompsData
+                      : _pubCompsObjs.length > 0  ? _pubCompsObjs
+                      : _staticComps;
+
+  // Subject EV/Revenue for premium/discount coloring
+  const _subjectEvRev = val.ev_revenue_multiple ?? null;
+
+  // Compute comp set EV/Revenue values for the positioning bar
+  const _compEvRevs = _allCompsData
+    .map(c => c.ev_revenue_multiple ?? c.ev_revenue ?? null)
+    .filter(v => v != null);
+  const _compMedian = _compEvRevs.length > 0
+    ? [..._compEvRevs].sort((a,b)=>a-b)[Math.floor(_compEvRevs.length/2)]
+    : null;
+
+  // Positioning bar HTML — shows where subject sits relative to comp set
+  const _posBar = (() => {
+    if (_compEvRevs.length < 2 || _subjectEvRev == null) return "";
+    const allVals  = [..._compEvRevs, _subjectEvRev];
+    const barMin   = Math.min(...allVals) * 0.85;
+    const barMax   = Math.max(...allVals) * 1.15;
+    const barRange = barMax - barMin || 1;
+    const pct      = v => Math.max(0, Math.min(100, ((v - barMin) / barRange) * 100)).toFixed(1);
+    const subPct   = pct(_subjectEvRev);
+    const subColor = _compMedian != null && _subjectEvRev <= _compMedian ? "var(--green)" : "var(--amber)";
+    const compTicks = _compEvRevs.map(v =>
+      `<div style="position:absolute;left:${pct(v)}%;top:0;bottom:0;width:2px;background:var(--border2);border-radius:1px"></div>`
+    ).join("");
+    const medLine = _compMedian != null
+      ? `<div style="position:absolute;left:${pct(_compMedian)}%;top:-4px;bottom:-4px;width:1px;background:var(--gold);opacity:.7"></div>
+         <div style="position:absolute;left:${pct(_compMedian)}%;bottom:-18px;transform:translateX(-50%);font-size:9px;color:var(--gold-dim);white-space:nowrap">median ${_compMedian.toFixed(1)}x</div>`
+      : "";
+    return `<div style="margin:18px 0 28px;padding:0 2px">
+      <div style="font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">
+        EV/Revenue Positioning — Subject vs. Comp Set
+      </div>
+      <div style="position:relative;height:8px;background:var(--surface2);border-radius:4px;border:1px solid var(--border)">
+        ${compTicks}
+        ${medLine}
+        <div style="position:absolute;left:${subPct}%;top:50%;transform:translate(-50%,-50%);
+                    width:10px;height:10px;border-radius:50%;background:${subColor};
+                    border:2px solid var(--bg);box-shadow:0 0 6px ${subColor}40;z-index:2"></div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:22px;font-size:10px;color:var(--text-dim)">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${subColor};margin-right:4px;vertical-align:middle"></span>Subject (${_subjectEvRev.toFixed(1)}x)</span>
+        <span><span style="display:inline-block;width:8px;height:2px;background:var(--gold);margin-right:4px;vertical-align:middle"></span>Comp Median</span>
+        <span><span style="display:inline-block;width:8px;height:8px;background:var(--border2);margin-right:4px;vertical-align:middle"></span>Comp</span>
+      </div>
+    </div>`;
+  })();
+
   const liveCompsTable = _allCompsData.length > 0
-    ? `<table class="fin-table" style="margin-top:14px;">
-        <thead><tr><th>Comp</th><th>Name</th><th style="text-align:right">EV/Rev</th><th style="text-align:right">EV/EBITDA</th><th style="text-align:right">Rev Growth</th></tr></thead>
-        <tbody>${_allCompsData.map(c => {
-          // Normalize field names across both schemas
-          const _ticker  = c.ticker || "—";
-          const _name    = c.name || c.company || "—";
-          const _evRev   = c.ev_revenue_multiple ?? c.ev_revenue;
-          const _evEbitda= c.ev_ebitda_multiple  ?? c.ev_ebitda;
-          const _revGrow = c.revenue_growth_pct;
-          const _notes   = c.notes ? `<br><span style="font-size:10px;color:var(--text-dim)">${c.notes}</span>` : "";
-          return `<tr>
-            <td class="label-col" style="color:var(--accent);font-weight:500">${_ticker}</td>
-            <td class="label-col">${_name}${_notes}</td>
-            <td class="val-col">${_evRev   != null ? _evRev.toFixed(1)+"x"   : "—"}</td>
-            <td class="val-col">${_evEbitda!= null ? _evEbitda.toFixed(1)+"x": "—"}</td>
-            <td class="val-col">${_revGrow != null ? _revGrow.toFixed(0)+"%"  : "—"}</td>
-          </tr>`;
-        }).join("")}
-        </tbody>
-      </table>` : "";
+    ? `<div style="margin-top:14px">
+        <div style="font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">
+          Public Comparables${_allCompsData[0]?.source === "comps_skill" ? ' <span style="color:var(--accent);opacity:.7">/comps</span>' : ""}
+        </div>
+        <table class="fin-table">
+          <thead><tr>
+            <th>Ticker</th><th>Name</th>
+            <th style="text-align:right">EV/Rev</th>
+            <th style="text-align:right">vs. Subject</th>
+            <th style="text-align:right">EV/EBITDA</th>
+            <th style="text-align:right">Rev Growth</th>
+          </tr></thead>
+          <tbody>${_allCompsData.map(c => {
+            const _ticker   = c.ticker || "—";
+            const _name     = c.name || c.company || "—";
+            const _evRev    = c.ev_revenue_multiple ?? c.ev_revenue ?? null;
+            const _evEbitda = c.ev_ebitda_multiple  ?? c.ev_ebitda  ?? null;
+            const _revGrow  = c.revenue_growth_pct ?? null;
+            const _notes    = c.notes ? `<br><span style="font-size:10px;color:var(--text-dim)">${c.notes}</span>` : "";
+            // Premium/discount indicator: green = subject at discount to this comp, red = premium
+            let _pdCell = `<td class="val-col" style="color:var(--text-dim)">—</td>`;
+            if (_evRev != null && _subjectEvRev != null) {
+              const _diff = _subjectEvRev - _evRev;
+              const _pct  = (_diff / _evRev * 100).toFixed(0);
+              const _isDiscount = _diff < 0;
+              const _color = _isDiscount ? "var(--green)" : "var(--red)";
+              const _label = _isDiscount ? `▼ ${Math.abs(_pct)}% disc` : `▲ ${_pct}% prem`;
+              _pdCell = `<td class="val-col" style="color:${_color};font-size:10px;white-space:nowrap">${_label}</td>`;
+            }
+            return `<tr>
+              <td class="label-col" style="color:var(--accent);font-weight:500">${_ticker}</td>
+              <td class="label-col">${_name}${_notes}</td>
+              <td class="val-col">${_evRev    != null ? _evRev.toFixed(1)+"x"    : "—"}</td>
+              ${_pdCell}
+              <td class="val-col">${_evEbitda != null ? _evEbitda.toFixed(1)+"x" : "—"}</td>
+              <td class="val-col">${_revGrow  != null ? _revGrow.toFixed(0)+"%"  : "—"}</td>
+            </tr>`;
+          }).join("")}
+          </tbody>
+        </table>
+        ${_posBar}
+      </div>` : "";
   const damRows = dam.matched_industry ? `
         <tr><td colspan="2" style="padding-top:12px;color:var(--text-dim);font-size:10px;letter-spacing:.06em;text-transform:uppercase">Damodaran Sector Benchmarks — ${dam.matched_industry}</td></tr>
         <tr><td>EV/EBITDA (Damodaran)</td><td class="val-col">${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>

@@ -49,7 +49,8 @@ EDGAR_BASE    = "https://www.sec.gov"
 EDGAR_HEADERS = {"User-Agent": "IPO-Screener research@yourfirm.com"}
 
 # Model config
-OPUS_MODEL  = "claude-opus-4-6"
+OPUS_MODEL   = "claude-opus-4-6"
+COMPS_MODEL  = "claude-sonnet-4-6"   # lighter model for pre-analysis comps identification
 
 # Retry config for Claude API calls
 MAX_RETRIES     = 3
@@ -415,13 +416,14 @@ Analyze the following from the filing text provided:
         Implied EV = (midpoint price × fully-diluted shares outstanding) + total debt − cash
       If price range is not yet set, use any disclosed valuation guidance or the last private
       round valuation. Document your assumption in the valuation_flag reasoning.
-    - Select 3–5 public comparable companies by SIC code and business model. For each comp:
-        • Name and ticker
-        • LTM revenue (USD millions)
-        • EBITDA or Adj. EBITDA margin (%)
-        • EV/Revenue multiple (live or most recently reported)
-        • EV/EBITDA multiple where positive EBITDA exists
-      Populate `public_comps` with ticker strings for yfinance enrichment.
+    - If the user message contains an [EXTERNAL COMPS DATA — source: /comps] block, use
+      those pre-fetched comparable companies as your primary comp set. If the block is absent
+      or contains fewer than 3 comps, supplement with your own selection to reach 4–6 total.
+    - Populate `public_comps` as an array of objects (NOT strings). Each object must have:
+        { "name": string, "ticker": string, "ev_revenue": number|null,
+          "ev_ebitda": number|null, "revenue_growth_pct": number|null }
+      Copy the ev_revenue, ev_ebitda, and revenue_growth_pct values directly from the
+      [EXTERNAL COMPS DATA] block where available; set null for unavailable metrics.
     - Calculate for the subject company:
         • EV/Revenue = implied_ev / TTM_revenue
         • EV/EBITDA = implied_ev / TTM_EBITDA (set to null if EBITDA is negative)
@@ -825,7 +827,15 @@ Use this exact schema:
     "ev_ebitda_multiple": null,
     "sector_median_ev_revenue": null,
     "premium_to_sector_median_pct": null,
-    "public_comps": [],
+    "public_comps": [
+      {
+        "name": "",
+        "ticker": "",
+        "ev_revenue": null,
+        "ev_ebitda": null,
+        "revenue_growth_pct": null
+      }
+    ],
     "valuation_flag": false,
     "sotp_valuation": {
       "segments": [
@@ -1480,6 +1490,91 @@ def _skip_stub(
     }
 
 
+def fetch_external_comps(client: anthropic.Anthropic, company_name: str,
+                          sector: str, sic_code: str) -> list:
+    """
+    Pre-analysis comps step — mirrors the /comps slash command workflow.
+
+    1. Uses COMPS_MODEL (Sonnet) to identify 4–6 comparable public companies
+       based on company name, sector, and SIC code.
+    2. Enriches each with live market data from yfinance:
+       ev_revenue, ev_ebitda, revenue_growth_pct.
+    3. Returns a list of comp dicts for injection into the Opus analysis prompt
+       as [EXTERNAL COMPS DATA — source: /comps].
+
+    Falls back to empty list on any error so the main analysis is unaffected.
+    """
+    sic_line = f"SIC code: {sic_code}" if sic_code else ""
+    prompt = (
+        f"You are a capital markets analyst. Identify 4–6 publicly traded comparable companies for:\n"
+        f"Company: {company_name}\n"
+        f"Sector / Industry: {sector or 'unknown'} {sic_line}\n\n"
+        "Select peers by: similar business model, comparable revenue scale, same SIC or adjacent sector.\n"
+        "Prioritize companies with positive EBITDA where feasible for EV/EBITDA comps.\n\n"
+        "Return ONLY a valid JSON array with no markdown fences. Each element:\n"
+        '{"name":"Full Company Name","ticker":"TICKER","rationale":"1-sentence reason"}\n'
+    )
+    try:
+        resp = client.messages.create(
+            model=COMPS_MODEL,
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+        comps_raw = json.loads(raw)
+        if not isinstance(comps_raw, list):
+            return []
+    except Exception as e:
+        log.warning(f"fetch_external_comps: identification failed for {company_name}: {e}")
+        return []
+
+    try:
+        import yfinance as yf
+    except ImportError:
+        log.info("yfinance not installed — external comps returned without live metrics")
+        return [
+            {"name": c.get("name", ""), "ticker": c.get("ticker", ""),
+             "ev_revenue": None, "ev_ebitda": None, "revenue_growth_pct": None,
+             "rationale": c.get("rationale", ""), "source": "comps_skill"}
+            for c in comps_raw[:6]
+        ]
+
+    enriched = []
+    for c in comps_raw[:6]:
+        ticker = (c.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        comp_obj = {
+            "name":               c.get("name", ticker),
+            "ticker":             ticker,
+            "ev_revenue":         None,
+            "ev_ebitda":          None,
+            "revenue_growth_pct": None,
+            "rationale":          c.get("rationale", ""),
+            "source":             "comps_skill",
+        }
+        try:
+            info   = yf.Ticker(ticker).info
+            ev     = info.get("enterpriseValue")
+            rev    = info.get("totalRevenue")
+            ebitda = info.get("ebitda")
+            growth = info.get("revenueGrowth")   # decimal e.g. 0.15 → 15%
+            if ev and rev and rev > 0:
+                comp_obj["ev_revenue"] = round(ev / rev, 1)
+            if ev and ebitda and ebitda > 0:
+                comp_obj["ev_ebitda"] = round(ev / ebitda, 1)
+            if growth is not None:
+                comp_obj["revenue_growth_pct"] = round(growth * 100, 1)
+            time.sleep(0.3)
+        except Exception as e:
+            log.warning(f"fetch_external_comps: yfinance failed for {ticker}: {e}")
+        enriched.append(comp_obj)
+
+    log.info(f"External comps fetched: {[c['ticker'] for c in enriched]}")
+    return enriched
+
+
 def analyze_filing(client: anthropic.Anthropic, filing: dict) -> dict:
     """
     Analyze a single S-1 filing with Claude Opus.
@@ -1557,6 +1652,34 @@ Your additional tasks for this amendment:
                 "Set is_amendment=true and prior_memo_date=null."
             )
 
+    # ── External comps pre-fetch — runs before Opus, injected as context ──
+    external_comps = []
+    try:
+        external_comps = fetch_external_comps(
+            client, company, sic_description or "", sic_code or ""
+        )
+    except Exception as e:
+        log.warning(f"External comps fetch failed for {company}: {e}")
+
+    comps_context = ""
+    if external_comps:
+        lines = []
+        for c in external_comps:
+            ev_rev    = f"{c['ev_revenue']}x"         if c.get("ev_revenue")         is not None else "N/A"
+            ev_ebitda = f"{c['ev_ebitda']}x"          if c.get("ev_ebitda")          is not None else "N/A"
+            rev_grow  = f"{c['revenue_growth_pct']}%" if c.get("revenue_growth_pct") is not None else "N/A"
+            lines.append(
+                f"  {c['ticker']:<8} {c['name'][:40]:<40} "
+                f"EV/Rev: {ev_rev:<8} EV/EBITDA: {ev_ebitda:<8} RevGrowth: {rev_grow}"
+            )
+        comps_context = (
+            "\n[EXTERNAL COMPS DATA — source: /comps]\n"
+            + "\n".join(lines)
+            + "\nUse these pre-fetched comps to populate valuation.public_comps[] objects "
+            "exactly as specified in the schema. Copy ev_revenue, ev_ebitda, and "
+            "revenue_growth_pct values from this table; set null where listed as N/A.\n"
+        )
+
     edgar_url = (
         f"https://www.sec.gov/cgi-bin/browse-edgar"
         f"?action=getcompany&CIK={cik}&type=S-1&dateb=&owner=include&count=10"
@@ -1568,7 +1691,7 @@ Filing date: {filing_date}
 Accession number: {accession}
 CIK: {cik}
 {sic_line}
-{amendment_context}
+{amendment_context}{comps_context}
 FILING TEXT (may be truncated to ~80,000 characters):
 {filing_text}
 
@@ -2349,14 +2472,22 @@ def enrich_valuation_with_live_comps(memo: dict) -> dict:
     if not raw_comps:
         return memo
 
-    # Accept only plausible ticker strings (1-10 chars, alphanumeric + dot/dash)
+    # Support both string-array (legacy) and object-array (new /comps format)
+    # Build a lookup of existing comps by ticker so we can merge live data in
+    comp_objects = {}   # ticker → object (from /comps pre-fetch or Opus-generated)
     tickers = []
     for c in raw_comps:
         if isinstance(c, str):
             t = c.strip().upper()
             if 1 <= len(t) <= 10:
                 tickers.append(t)
-    tickers = tickers[:5]  # cap at 5 to avoid long delays
+                comp_objects[t] = {"ticker": t, "name": t}
+        elif isinstance(c, dict):
+            t = (c.get("ticker") or "").strip().upper()
+            if 1 <= len(t) <= 10:
+                tickers.append(t)
+                comp_objects[t] = c   # preserve all existing fields (ev_revenue, etc.)
+    tickers = tickers[:6]  # cap at 6
 
     if not tickers:
         return memo
@@ -2367,25 +2498,39 @@ def enrich_valuation_with_live_comps(memo: dict) -> dict:
 
     for ticker in tickers:
         try:
-            info = yf.Ticker(ticker).info
-            ev  = info.get("enterpriseValue")
-            rev = info.get("totalRevenue")
-            name = info.get("shortName", ticker)
-            ev_rev = None
+            info   = yf.Ticker(ticker).info
+            ev     = info.get("enterpriseValue")
+            rev    = info.get("totalRevenue")
+            ebitda = info.get("ebitda")
+            growth = info.get("revenueGrowth")
+            name   = info.get("shortName", comp_objects.get(ticker, {}).get("name", ticker))
+            ev_rev = ev_ebitda = rev_grow = None
             if ev and rev and rev > 0:
                 ev_rev = round(ev / rev, 1)
                 ev_revenue_multiples.append(ev_rev)
+            if ev and ebitda and ebitda > 0:
+                ev_ebitda = round(ev / ebitda, 1)
+            if growth is not None:
+                rev_grow = round(growth * 100, 1)
+
+            # Merge live data into the existing comp object, preferring live values
+            base = comp_objects.get(ticker, {})
             live_comps.append({
-                "ticker":                     ticker,
-                "name":                       name,
-                "ev_usd_millions":            round(ev / 1_000_000) if ev else None,
-                "revenue_ttm_usd_millions":   round(rev / 1_000_000) if rev else None,
-                "ev_revenue_multiple":        ev_rev,
+                **base,
+                "ticker":               ticker,
+                "name":                 name,
+                "ev_usd_millions":      round(ev / 1_000_000) if ev else None,
+                "revenue_ttm_usd_millions": round(rev / 1_000_000) if rev else None,
+                "ev_revenue_multiple":  ev_rev   if ev_rev   is not None else base.get("ev_revenue"),
+                "ev_ebitda_multiple":   ev_ebitda if ev_ebitda is not None else base.get("ev_ebitda"),
+                "revenue_growth_pct":   rev_grow  if rev_grow  is not None else base.get("revenue_growth_pct"),
             })
             time.sleep(0.3)  # yfinance rate limiting
         except Exception as e:
             log.warning(f"Could not fetch comp data for {ticker}: {e}")
-            # Drop silently — do not pass failed tickers to the memo
+            # Preserve the comp object without live enrichment rather than silently dropping
+            base = comp_objects.get(ticker, {"ticker": ticker, "name": ticker})
+            live_comps.append({**base, "ev_usd_millions": None, "revenue_ttm_usd_millions": None})
 
     if not live_comps:
         return memo
