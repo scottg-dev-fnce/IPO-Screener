@@ -1597,7 +1597,7 @@ function renderMemo(m) {
     { label: "Valuation Attractiveness",       val: scores.valuation_attractiveness,   w: 20 }
   ];
   const dimBars = dims.map(d => {
-    const v   = d.val;
+    const v   = d.val != null ? d.val / 10 : null;
     const pct = v != null ? (v / 10 * 100).toFixed(0) + "%" : "0%";
     const col = v >= 7.5 ? "var(--green)" : v >= 5.5 ? "var(--amber)" : "var(--red)";
     return `<div class="dim-row">
@@ -2186,7 +2186,7 @@ function renderMemo(m) {
 
   // ── Dimension bars for cover (thresholds: green ≥7.0, amber 5.0–6.9, red <5.0) ──
   const _coverDims = dims.map(d => {
-    const v   = d.val;
+    const v   = d.val != null ? d.val / 10 : null;
     const pct = v != null ? (v / 10 * 100).toFixed(0) + "%" : "0%";
     const col = v >= 7.0 ? "var(--green)" : v >= 5.0 ? "var(--amber)" : "var(--red)";
     return `<div class="cover-dim-row">
