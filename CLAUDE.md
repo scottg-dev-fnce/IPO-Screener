@@ -497,6 +497,30 @@ PDF QUALITY CHECK: X issues found [Company Name]
 - If a critical field is missing, re-run analysis or patch the memo manually
 - Score ≤5 in `accounting_quality_score` also triggers RF-25 — verify `rf25_triggered` is set
 
+## FORWARD-ONLY IMPLEMENTATION RULE
+
+When implementing schema changes, new fields, new sections, or any other feature additions to the IPO screener:
+
+- **Do NOT re-run, re-analyze, regenerate, or backfill any existing memos.** Existing memo JSON files remain untouched. Re-running analyses depletes API usage rapidly and is almost never necessary.
+- **All renderers and downstream code must gracefully handle missing fields on older memos** — display `N/A`, hide the element, or fall back cleanly. Never throw errors or break layouts on memos that predate the new field.
+- **Changes are forward-only by default.** The next memo run will populate new fields; prior memos stay as-is. If the user wants a specific memo updated, they will explicitly ask.
+- **Do not offer to backfill or update existing memos** as part of an implementation. Do not suggest re-running analyses to populate new fields.
+
+### Self-Audit Requirements
+
+After implementing any change, before committing to GitHub, perform a self-audit that verifies process and correctness, not memo regeneration:
+
+1. Re-read every file modified and confirm the new field/feature is wired end-to-end through schema → extraction prompt → JSON output → renderer.
+2. Verify backward compatibility: existing memos must still render correctly without the new field present.
+3. Confirm no existing functionality broke — composite score, dimension scores, use-of-proceeds tab, comps, and all other elements still render on prior memos.
+4. Verify the change is syntactically valid (no Python errors, no JS console errors, no broken HTML).
+5. Report any discrepancies found during the audit and fix them before committing.
+6. **Do not run analyses on existing companies as part of the audit.** The audit checks code integrity, not data regeneration.
+
+### GitHub Push Rule
+
+Every implementation ends with `git add -A && git commit -m '<descriptive message>' && git push` after the self-audit passes. No implementation is considered complete until pushed to GitHub.
+
 ## AUTO-BACKUP RULE
 
 At the end of any session where one or more of these files were modified:
