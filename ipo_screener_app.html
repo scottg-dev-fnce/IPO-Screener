@@ -1095,6 +1095,14 @@
                        border-radius:6px; padding:10px 14px; margin-bottom:16px;
                        font-size:12px; color:var(--red); font-weight:600; }
 
+  /* ── validateMemo warning banner ───────────────────── */
+  .validate-warn-banner { background:rgba(232,169,53,.08); border:1px solid rgba(232,169,53,.35);
+                          border-radius:6px; padding:10px 16px; margin:12px 20px 0;
+                          font-size:11px; color:var(--amber); }
+  .validate-warn-banner strong { display:block; margin-bottom:5px; font-size:12px; }
+  .validate-warn-banner ul { margin:0; padding-left:16px; }
+  .validate-warn-banner li { margin:2px 0; line-height:1.5; }
+
   /* ── Section 17 ESG Disclosure Score ───────────────── */
   .esg-composite-block { display:flex; align-items:center; gap:18px; padding:14px 18px;
                          border-radius:8px; background:var(--surface2); border:1px solid var(--border2);
@@ -1563,8 +1571,14 @@ async function selectCompany(date, file, companyName) {
     const resp = await fetch(`${DATA_BASE}/${date}/${file}`);
     if (!resp.ok) throw new Error("Not found");
     const data = await resp.json();
-    validateMemo(data);
+    const _valWarnings = validateMemo(data);
     renderMemo(data);
+    if (_valWarnings && _valWarnings.length > 0) {
+      const _wDiv = document.createElement("div");
+      _wDiv.className = "validate-warn-banner";
+      _wDiv.innerHTML = `<strong>&#x26A0; Memo Validation Warnings (${_valWarnings.length}) — Review before sending to MD</strong><ul>${_valWarnings.map(w => `<li>${w}</li>`).join("")}</ul>`;
+      document.getElementById("memo-panel").prepend(_wDiv);
+    }
   } catch (e) {
     document.getElementById("memo-panel").innerHTML =
       `<div class="memo-empty"><p>Could not load memo: ${e.message}</p></div>`;
@@ -1897,9 +1911,15 @@ function renderMemo(m) {
         <tr><td>Premium to Sector</td><td class="val-col" style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.premium_to_sector_median_pct != null ? val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
         <tr><td>Public Comps</td><td class="val-col">${(() => {
           // Support string-array (old) or object-array (new) for comp tickers
+          // Format each object entry as "Ticker — Company Name — Note"; never dump raw JSON
           const _pc = val.public_comps || val.comparable_companies || [];
           if (!_pc.length) return "—";
-          return _pc.map(x => typeof x === "string" ? x : (x.ticker || x.company || safeRender(x))).join(", ") || "—";
+          const _lines = _pc.map(x => {
+            if (typeof x === "string") return x;
+            const _parts = [x.ticker, x.name || x.company, x.note || x.notes].filter(Boolean);
+            return _parts.length ? _parts.join(" \u2014 ") : safeRender(x, {fallback: "—"});
+          }).filter(Boolean);
+          return _lines.length ? _lines.join("<br>") : "—";
         })()}</td></tr>
         ${damRows}
       </tbody>
@@ -2677,9 +2697,15 @@ function buildSection16(m) {
     return namedKeys.map(function(pair) {
       var key = pair[0], label = pair[1], v = ap[key];
       if (!v) return null;
-      // Opus may return a plain string narrative instead of a structured object
+      // Opus may return a plain string narrative instead of a structured object.
+      // Infer risk_rating from keywords in the narrative; default to Standard.
       if (typeof v === 'string') {
-        return { category: label, key: key, description: v, assessment: "", earnings_impact: "", risk_rating: "" };
+        var _vl = v.toLowerCase();
+        var _inferred = (_vl.includes("highly aggressive") || _vl.includes("highly-aggressive")) ? "Highly Aggressive"
+                      : _vl.includes("aggressive")   ? "Aggressive"
+                      : _vl.includes("conservative")  ? "Conservative"
+                      : "Standard";
+        return { category: label, key: key, description: v, assessment: "", earnings_impact: "", risk_rating: _inferred };
       }
       return {
         category:       label,
@@ -3230,7 +3256,12 @@ function missingDataFlag(sectionLabel) {
 }
 
 // ── validateMemo: checks critical fields before render; logs to console ──────
+// Returns array of warning strings; non-empty array triggers dashboard banner.
 function validateMemo(memo) {
+  var warnings = [];   // collected for dashboard display
+  function _warn(msg)  { warnings.push(msg); console.warn("[validateMemo] " + msg); }
+  function _info(msg)  { console.info("[validateMemo] " + msg); }
+
   var checks = [
     { path: "company_name",          type: "string"  },
     { path: "recommendation",        type: "string"  },
@@ -3248,45 +3279,105 @@ function validateMemo(memo) {
     for (var i = 0; i < parts.length; i++) v = v && v[parts[i]];
     var actual = Array.isArray(v) ? "array" : typeof v;
     if (v == null || (c.type !== "any" && actual !== c.type)) {
-      console.warn("[validateMemo] MISSING/WRONG TYPE:", c.path,
-        "— expected", c.type, "got", actual + ":", v);
+      _warn("MISSING/WRONG TYPE: " + c.path + " — expected " + c.type + " got " + actual);
     }
   });
-  // Fix #1: warn on malformed scores.adjustments entries (missing trigger/rule)
-  var adjs = (memo.scores || {}).adjustments || [];
-  adjs.forEach(function(a, i) {
-    if (!a.trigger && !a.rule) console.warn("[validateMemo] scores.adjustments["+i+"] missing trigger/rule field — will render as 'Adj'");
-  });
-  // Fix #2: warn on missing underwriting_type
-  if (!memo.underwriting_type) {
-    console.warn("[validateMemo] MISSING: underwriting_type — check Underwriting/Plan of Distribution section of filing");
+
+  // ── New check A: public_comps / comparable_companies entries must be structured objects ──
+  var _val = memo.valuation || {};
+  var _pcArr = _val.public_comps || _val.comparable_companies || [];
+  // Also catch the case where the whole field was returned as a JSON string instead of an array
+  if (typeof _pcArr === "string") {
+    _warn("valuation.public_comps expected array but received string — likely raw JSON dump from Opus; Section 08 comps table will not render correctly");
+  } else {
+    (_pcArr).forEach(function(x, idx) {
+      if (typeof x === "string" && x.trim().startsWith("{")) {
+        _warn("public_comps malformed — comp " + idx + " is a stringified JSON object, not a parsed object; Section 08 comps table will show raw text");
+      } else if (typeof x !== "string" && typeof x === "object" && x !== null) {
+        if (!x.ticker && !x.name && !x.company) {
+          _warn("public_comps malformed — comp " + idx + " is an object but has no ticker, name, or company field");
+        }
+      }
+    });
   }
-  // Fix #4: warn on empty comparable IPO data
+
+  // ── New check B: accounting_practices.items[] must have ≥6 entries with risk_rating ──
+  var _ap = memo.accounting_practices || {};
+  var _apItems = _ap.items || [];
+  if (_apItems.length === 0) {
+    // Fallback: check named keys — if those are also missing, it's a real gap
+    var _namedKeyCount = ["revenue_recognition","cost_capitalization","lease_classification",
+      "goodwill_impairment","depreciation_amortization","pension_obligations",
+      "non_gaap_metrics","related_party_disclosures"].filter(function(k) { return !!_ap[k]; }).length;
+    if (_namedKeyCount < 6) {
+      _warn("accounting category rows missing — accounting_practices.items[] is empty and fewer than 6 named keys are populated; Section 18 category rows will show dashes");
+    } else {
+      // Named keys present — check if any would produce a risk_rating (objects only)
+      var _namedObjCount = ["revenue_recognition","cost_capitalization","lease_classification",
+        "goodwill_impairment","depreciation_amortization","pension_obligations",
+        "non_gaap_metrics","related_party_disclosures"].filter(function(k) {
+          return _ap[k] && typeof _ap[k] === "object" && (_ap[k].risk_rating || _ap[k].rating);
+        }).length;
+      if (_namedObjCount === 0) {
+        _info("accounting_practices uses string narratives for category keys — risk_rating will be inferred from keyword scan (Conservative/Standard/Aggressive)");
+      }
+    }
+  } else {
+    var _missingRating = _apItems.filter(function(it) { return !it.risk_rating; }).length;
+    if (_missingRating === _apItems.length) {
+      _warn("accounting category rows missing — accounting_practices.items[] has " + _apItems.length + " entries but all risk_rating fields are null/empty; Section 18 ratings will show dashes");
+    }
+  }
+
+  // ── New check C: generic array-expected-but-got-string guard ──
+  var _arrayFields = [
+    "red_flags", "underwrite_reasons", "pass_reasons",
+    "valuation.comparable_companies", "valuation.public_comps"
+  ];
+  _arrayFields.forEach(function(path) {
+    var parts = path.split(".");
+    var v = memo;
+    for (var i = 0; i < parts.length; i++) v = v && v[parts[i]];
+    if (typeof v === "string" && v.trim().length > 0) {
+      _warn("Field '" + path + "' expected array but received string — likely raw JSON dump from Opus; renderer may display raw text");
+    }
+  });
+
+  // Warn on malformed scores.adjustments entries
+  var adjs = (_val.scores || memo.scores || {}).adjustments || [];
+  adjs.forEach(function(a, i) {
+    if (!a.trigger && !a.rule) _warn("scores.adjustments["+i+"] missing trigger/rule field — will render as 'Adj'");
+  });
+  // Warn on missing underwriting_type
+  if (!memo.underwriting_type) {
+    _info("MISSING: underwriting_type — check Underwriting/Plan of Distribution section of filing");
+  }
+  // Warn on empty comparable IPO data
   var _cipPerf = memo.comparable_ipo_performance || {};
   var _hasComps = (memo.comparable_ipos || _cipPerf.comparable_ipos || _cipPerf.recent_comps || []).length > 0;
   if (!_hasComps) {
-    console.warn("[validateMemo] EMPTY: no comparable IPO data found in comparable_ipos or comparable_ipo_performance — Section 16 will show placeholder");
+    _info("EMPTY: no comparable IPO data found in comparable_ipos or comparable_ipo_performance — Section 16 will show placeholder");
   }
-  // Fix #8: note dual-source confirmation status
+  // Note dual-source confirmation status
   var _flags = memo.red_flags || [];
   var _dualCount = _flags.filter(function(f) { return typeof f === "object" && f.dual_source_confirmed; }).length;
   if (_flags.length > 0 && _dualCount === 0) {
-    console.info("[validateMemo] NOTE: no dual_source_confirmed flags — cross_reference_flags() requires a /diligence pass to populate badges");
+    _info("NOTE: no dual_source_confirmed flags — cross_reference_flags() requires a /diligence pass to populate badges");
   }
-  // Warn about [object Object] risks in free-text fields
+  // Note [object Object] risks in free-text fields
   ["business_overview","macro_sector_context"].forEach(function(k) {
     var v = memo[k];
     if (v != null && typeof v === "object" && !Array.isArray(v)) {
-      console.info("[validateMemo] NOTE:", k, "is an object — safeRender will be applied automatically.");
+      _info("NOTE: " + k + " is an object — safeRender will be applied automatically.");
     }
   });
   // Dimension deduction overflow check
   var dimMap = {
-    "business_model_quality":    "Business Model Quality",
-    "financial_health_runway":   "Financial Health & Runway",
+    "business_model_quality":      "Business Model Quality",
+    "financial_health_runway":     "Financial Health & Runway",
     "market_competitive_position": "Market & Competitive Position",
-    "management_governance":     "Management & Governance",
-    "valuation_attractiveness":  "Valuation Attractiveness"
+    "management_governance":       "Management & Governance",
+    "valuation_attractiveness":    "Valuation Attractiveness"
   };
   var dimDeductions = {};
   (memo.red_flags || []).forEach(function(rf) {
@@ -3299,10 +3390,11 @@ function validateMemo(memo) {
   Object.keys(dimDeductions).forEach(function(dim) {
     if (dimDeductions[dim] > 10) {
       var label = dimMap[dim] || dim;
-      console.warn("[validateMemo] DIMENSION OVERFLOW: " + label +
-        " has " + dimDeductions[dim].toFixed(1) + " pts of flag deductions — manual review required.");
+      _warn("DIMENSION OVERFLOW: " + label + " has " + dimDeductions[dim].toFixed(1) + " pts of flag deductions — manual review required.");
     }
   });
+
+  return warnings;
 }
 
 // ─────────────────────────────────────────────────────────
