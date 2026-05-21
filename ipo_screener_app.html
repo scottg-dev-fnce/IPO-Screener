@@ -980,17 +980,19 @@
     /* Prevent individual table rows from orphaning across page boundaries */
     #memo-panel .fin-table tr,
     #memo-panel .dam-table tr { page-break-inside: avoid; break-inside: avoid; }
-    /* ── Accounting table ── */
+    /* ── Accounting table — description-list pattern ── */
     #memo-panel .acct-table { table-layout: fixed; width: 100%; }
-    #memo-panel .acct-table td:nth-child(1) { width: 17%; }
-    #memo-panel .acct-table td:nth-child(2) { width: 50%; }
-    #memo-panel .acct-table td:nth-child(3) { width: 17%; }
-    #memo-panel .acct-table td:nth-child(4) { width: 16%; }
-    #memo-panel .acct-table td { font-size: 10px; word-wrap: break-word; }
-    /* Bug 4 — expand Aggressive/Highly Aggressive rows in PDF; collapse others */
-    .acct-detail-row { display: none !important; }
-    .acct-detail-row.acct-detail-print-open { display: table-row !important; }
+    #memo-panel .acct-table td:nth-child(1) { width: 70%; }
+    #memo-panel .acct-table td:nth-child(2) { width: 30%; }
+    #memo-panel .acct-table td { font-size: 10px; word-wrap: break-word; overflow-wrap: break-word; }
+    /* PDF: show only Aggressive/Highly Aggressive rows; inline detail always visible */
+    .acct-row-expandable { display: none !important; }
+    .acct-row-expandable.acct-print-show { display: table-row !important; }
+    .acct-print-show .acct-detail-body { display: block !important; }
     .acct-hint { display: none !important; }
+    /* Issue 1 — suppress validation warnings and score adjustment banners in PDF */
+    .validate-warn-banner { display: none !important; }
+    .score-adj-note { display: none !important; }
     /* Fix 3 — flag table shown in print; flag list + narrative hidden */
     .flag-list, .key-risk-narrative { display: none !important; }
     .pdf-flag-table { display: table; width: 100%; border-collapse: collapse; margin-top: 8px; }
@@ -1073,8 +1075,8 @@
                                color:var(--text-dim); transition:transform .18s;
                                vertical-align:middle; user-select:none; }
   .acct-row-expandable.open .acct-toggle { transform:rotate(90deg); }
-  .acct-detail-row           { display:none; }
-  .acct-detail-row.open      { display:table-row; }
+  .acct-row-expandable .acct-detail-body { display:none; }
+  .acct-row-expandable.open .acct-detail-body { display:block; }
   .acct-detail-body          { padding:6px 10px 14px 26px; font-size:11.5px; color:var(--text-mid);
                                line-height:1.75; font-family:'Libre Baskerville',serif; }
   .acct-detail-label         { display:block; font-size:9px; text-transform:uppercase;
@@ -1899,6 +1901,57 @@ function renderMemo(m) {
         </tr>` : ""}
       </tbody>
     </table>` : "";
+  // ── Segment-grouped comps table (only when comps have segment field) ────────
+  const _compsList2 = val.public_comps || val.comparable_companies || [];
+  const _hasSegments = _compsList2.length > 0 && _compsList2.some(c => typeof c === "object" && c.segment);
+  const segmentCompsTable = _hasSegments ? (() => {
+    const _groups = {};
+    const _order  = [];
+    _compsList2.forEach(c => {
+      if (typeof c !== "object") return;
+      const seg = c.segment || "Other";
+      if (!_groups[seg]) { _groups[seg] = []; _order.push(seg); }
+      _groups[seg].push(c);
+    });
+    return `<div style="margin-top:18px">
+      <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px">Comparable Companies — by Segment</p>
+      ${_order.map(seg => {
+        const comps = _groups[seg];
+        return `<p style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gold);text-transform:uppercase;margin:10px 0 4px">${seg}</p>
+        <table class="comp-table" style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;padding:4px 8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);font-weight:400;border-bottom:1px solid var(--border2)">Ticker</th>
+            <th style="text-align:left;padding:4px 8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);font-weight:400;border-bottom:1px solid var(--border2)">Company / What it tells us</th>
+            <th style="text-align:right;padding:4px 8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);font-weight:400;border-bottom:1px solid var(--border2)">EV/Rev</th>
+            <th style="text-align:right;padding:4px 8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);font-weight:400;border-bottom:1px solid var(--border2)">EV/EBITDA</th>
+            <th style="text-align:right;padding:4px 8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);font-weight:400;border-bottom:1px solid var(--border2)">Rev Gr</th>
+          </tr></thead>
+          <tbody>
+            ${comps.map(c => {
+              const evRev = c.ev_revenue_multiple ?? c.ev_revenue ?? null;
+              const evEb  = c.ev_ebitda_multiple  ?? c.ev_ebitda  ?? null;
+              const revGr = c.revenue_growth_pct ?? null;
+              const noteTxt = c.note || c.notes || "";
+              const impTxt  = c.imperfection ? `<span style="font-size:9px;color:var(--amber);display:block;margin-top:2px">⚠ ${c.imperfection}</span>` : "";
+              return `<tr>
+                <td style="padding:6px 8px;color:var(--accent);font-weight:600;font-size:11px;border-bottom:1px solid var(--border);white-space:nowrap">${c.ticker || "—"}</td>
+                <td style="padding:6px 8px;font-size:11px;color:var(--text-mid);border-bottom:1px solid var(--border)">
+                  <span style="color:var(--text);font-weight:500">${c.name || c.company || "—"}</span>
+                  ${noteTxt ? `<span style="font-size:10px;color:var(--text-dim);display:block;margin-top:2px">${noteTxt}</span>` : ""}
+                  ${impTxt}
+                </td>
+                <td style="padding:6px 8px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;border-bottom:1px solid var(--border)">${evRev != null ? evRev.toFixed(1)+"x" : "—"}</td>
+                <td style="padding:6px 8px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;border-bottom:1px solid var(--border)">${evEb != null ? evEb.toFixed(1)+"x" : "—"}</td>
+                <td style="padding:6px 8px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;border-bottom:1px solid var(--border)">${revGr != null ? (revGr > 0 ? "+" : "") + revGr.toFixed(0)+"%" : "—"}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+      }).join("")}
+      ${val.comp_selection_rationale ? `<p style="font-size:10px;color:var(--text-dim);font-style:italic;margin-top:10px">${val.comp_selection_rationale}</p>` : ""}
+    </div>`;
+  })() : "";
+
   const valSection = `<div class="memo-section">
     <h3><span class="section-num">08</span> Valuation Analysis ${liveFlag}${damFlag}</h3>
     <table class="fin-table">
@@ -1911,9 +1964,13 @@ function renderMemo(m) {
         <tr><td>Premium to Sector</td><td class="val-col" style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.premium_to_sector_median_pct != null ? val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
         <tr><td>Public Comps</td><td class="val-col">${(() => {
           // Support string-array (old) or object-array (new) for comp tickers
-          // Format each object entry as "Ticker — Company Name — Note"; never dump raw JSON
+          // When segment comps table is rendered below, show just tickers in summary
           const _pc = val.public_comps || val.comparable_companies || [];
           if (!_pc.length) return "—";
+          if (_hasSegments) {
+            const tickers = _pc.map(x => typeof x === "string" ? x : (x.ticker || "")).filter(Boolean);
+            return tickers.length ? `<span style="color:var(--text-dim);font-size:10px">${tickers.join(", ")} — see segment breakdown below</span>` : "—";
+          }
           const _lines = _pc.map(x => {
             if (typeof x === "string") return x;
             const _parts = [x.ticker, x.name || x.company, x.note || x.notes].filter(Boolean);
@@ -1925,6 +1982,7 @@ function renderMemo(m) {
       </tbody>
     </table>
     ${liveCompsTable}
+    ${segmentCompsTable}
     ${sotpTable}
     ${damBench}
   </div>`;
@@ -2146,10 +2204,15 @@ function renderMemo(m) {
         <th style="text-align:right">% of Proceeds</th>
       </tr></thead>
       <tbody>${_breakdown.map(row => {
-        const pct = row.pct_of_proceeds != null ? row.pct_of_proceeds.toFixed(1) + "%" : "—";
-        const amt = row.amount_usd_millions != null ? "$" + row.amount_usd_millions.toLocaleString() + "M" : "—";
+        const _pctVal = row.pct_of_proceeds ?? row.pct_of_net_proceeds;
+        const pct = _pctVal != null ? _pctVal.toFixed(1) + "%" : "—";
+        const amt = row.amount_usd_millions != null
+          ? "$" + row.amount_usd_millions.toLocaleString() + "M"
+          : (row.amount_label || "—");
+        const noteHtml = row.note
+          ? `<br><span style="font-size:10px;color:var(--text-dim)">${row.note}</span>` : "";
         return `<tr>
-          <td class="label-col">${safeRender(row.purpose, {fallback:"—"})}</td>
+          <td class="label-col">${safeRender(row.purpose || row.category, {fallback:"—"})}${noteHtml}</td>
           <td class="val-col">${amt}</td>
           <td class="val-col">${pct}</td>
         </tr>`;
@@ -2202,7 +2265,7 @@ function renderMemo(m) {
   }
   if ((scores.adjustments || []).length > 0) {
     const _adjTxt = scores.adjustments.map(a => `${a.trigger || a.rule || "Adj"} — ${a.description || (a.penalty != null ? a.penalty + "\u202fpts" : "")}`).join("; ");
-    _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x26A0; Score Adj: ${_adjTxt}</span>`);
+    _coverAlerts.push(`<span class="cover-alert cover-alert-amber no-print">&#x26A0; Score Adj: ${_adjTxt}</span>`);
   }
   const _coverAlertsHtml = _coverAlerts.length > 0
     ? `<div class="cover-alerts-row">${_coverAlerts.join("")}</div>` : "";
@@ -2783,22 +2846,20 @@ function buildSection16(m) {
         const rowId = `${uid}_${i}`;
         const detailParts = [];
         const combined = [it.description, it.assessment].filter(Boolean).join(" ");
-        if (combined)        detailParts.push(`<span class="acct-detail-label">Policy &amp; Assessment</span>${combined}`);
+        if (combined)           detailParts.push(`<span class="acct-detail-label">Policy &amp; Assessment</span>${combined}`);
         if (it.earnings_impact) detailParts.push(`<span class="acct-detail-label">Earnings / B&amp;S Impact</span>${it.earnings_impact}`);
         const hasDetail = detailParts.length > 0;
-        const mainRow = `<tr class="acct-row-expandable${hasDetail ? "" : ""}"
+        const ratingKey = (it.risk_rating || "").toLowerCase().replace(/[\s-]+/g, "");
+        const isPrintShow = ratingKey === "aggressive" || ratingKey.startsWith("highly");
+        // Description-list pattern: detail inline below category (no separate <tr> colspan hack)
+        return `<tr class="acct-row-expandable${isPrintShow ? " acct-print-show" : ""}"
           onclick="toggleAcctRow('${rowId}')">
-          <td><span class="acct-toggle">${hasDetail ? "&#9654;" : ""}</span>${it.category || it.key || "—"}</td>
+          <td>
+            <span class="acct-toggle">${hasDetail ? "&#9654;" : ""}</span>${it.category || it.key || "—"}
+            ${hasDetail ? `<div class="acct-detail-body" id="${rowId}">${detailParts.join("")}</div>` : ""}
+          </td>
           <td>${ratingBadge(it.risk_rating)}</td>
         </tr>`;
-        const ratingKey = (it.risk_rating || "").toLowerCase().replace(/[\s-]+/g, "");
-        const isPrintOpen = ratingKey === "aggressive" || ratingKey.startsWith("highly");
-        const detailRow = hasDetail
-          ? `<tr class="acct-detail-row${isPrintOpen ? " acct-detail-print-open" : ""}" id="${rowId}">
-              <td colspan="2"><div class="acct-detail-body">${detailParts.join("")}</div></td>
-            </tr>`
-          : "";
-        return mainRow + detailRow;
       }).join("")
     : `<tr><td colspan="2" style="color:var(--text-dim);font-style:italic;padding:12px 10px">No accounting items available.</td></tr>`;
 
@@ -2822,9 +2883,9 @@ function toggleAcctRow(id) {
   const detail = document.getElementById(id);
   if (!detail) return;
   const isOpen = detail.classList.toggle("open");
-  // Walk back to the preceding <tr> to rotate the toggle arrow
-  const mainRow = detail.previousElementSibling;
-  if (mainRow) mainRow.classList.toggle("open", isOpen);
+  // Walk up to the enclosing <tr> to rotate the toggle arrow
+  const tr = detail.closest ? detail.closest("tr") : null;
+  if (tr) tr.classList.toggle("open", isOpen);
 }
 
 function buildSection17(m) {
