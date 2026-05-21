@@ -74,9 +74,11 @@ When triggered: `apply_leverage_adjustments()` recalculates weighted_total with
 FHR 20% / VA 15% and appends an adjustment note to scores.adjustments[].
 App displays amber banner: "LEVERAGED ISSUER — Financial Health weight increased to 20%."
 
-**Leverage hard floor** (Python-enforced after leverage detection):
-- GAAP-profitable + Debt/EBITDA >4x: Financial Health cannot score above 4.0
-- GAAP-loss + Debt/AdjEBITDA >6x AND interest expense >20% of revenue: FHR ≤4.0
+**Leverage threshold detection** (Python-detected, no score cap):
+- GAAP-profitable + Debt/EBITDA >4x: flags condition, adds note to adjustments
+- GAAP-loss + Debt/AdjEBITDA >6x AND interest expense >20% of revenue: flags condition
+- No hard cap on FHR — Opus must populate `leverage_assessment` with strategic evaluation
+  ending in a one-sentence verdict. Score/recommendation determined by normal framework.
 
 ### Score Thresholds (updated 2026-04-23)
 | Score | Band | JSON value | App badge color |
@@ -89,9 +91,17 @@ App displays amber banner: "LEVERAGED ISSUER — Financial Health weight increas
 Note: recommendation field uses underscores (`CONDITIONAL_LIGHT`). The app displays
 spaces (`CONDITIONAL LIGHT`) via `.replace(/_/g, " ")`.
 
+### Auto-PASS Overrides (only two — all others use the scoring framework)
+- **RF-01B Structural Going Concern** — Python-enforced; no override possible
+- **Pre-Analysis Eligibility Gate** — SPACs, REITs, ETFs, BDCs, etc.; aborted before S-1 fetch
+All other flags, including RF-19 (proceeds quality), EV/EBITDA >20x valuation ceiling, and
+leverage threshold, contribute to dimension score deductions and require strategic assessment
+fields (`proceeds_quality_assessment`, `valuation_ceiling_assessment`, `leverage_assessment`)
+but do **not** force any specific recommendation outcome.
+
 ### Red Flag Deductions
 Deduction amounts by severity (applied to the dimension score before weighting):
-- CRITICAL → Special treatment (see RF-01A/01B); score_deduction: null
+- CRITICAL → RF-01B only: AUTOMATIC PASS. All other CRITICAL flags deduct from dimension score.
 - HIGH     → −2.5 pts from affected dimension (except RF-01A: −4.0)
 - MEDIUM   → −1.5 pts from affected dimension
 - LOW      → −1.0 pt from affected dimension
@@ -280,7 +290,7 @@ RF-15: PRODUCT CONCENTRATION — >60% of revenue from a single product/service w
 RF-16: GEOGRAPHIC CONCENTRATION — >60% revenue from a single geography with no articulated expansion plan.
 RF-17: TECHNOLOGY OBSOLESCENCE — Core technology has known near-term substitutes (AI disruption, open-source, platform consolidation).
 RF-18: WORKING CAPITAL STRESS — Negative working capital or current ratio <1.0 suggesting near-term liquidity issues.
-RF-19: PROCEEDS QUALITY — >30% of gross IPO proceeds to debt repayment, sponsor distributions, or existing shareholder liquidity rather than company operations.
+RF-19: PROCEEDS QUALITY — >30% of gross IPO proceeds to debt repayment, sponsor distributions, or existing shareholder liquidity rather than company operations. HIGH −2.5 pts from M&G. Requires `proceeds_quality_assessment` field with one-sentence verdict. No auto-PASS.
 RF-20: SYNDICATE SPREAD RISK — More than 4 lead/co-manager underwriters on a deal below $500M. Signals difficulty placing the book.
 RF-21: PE / SPONSOR OVERHANG — PE/sponsor ownership >40% post-IPO with lockup ≤180 days; predictable secondary selling pressure.
 RF-22: SMALL FIRM SUITABILITY — Offering size <$50M, or TTM revenue <$10M, or pre-revenue stage. Strong PASS signal (not automatic override).

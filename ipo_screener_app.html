@@ -1040,6 +1040,16 @@
   .rf-banner { border-radius:5px; padding:10px 14px; margin:10px 0; font-size:12px; font-weight:600; }
   .rf-banner-red   { background:rgba(224,82,82,.07);  border:1px solid rgba(224,82,82,.3);  color:var(--red); }
   .rf-banner-amber { background:rgba(232,169,53,.08); border:1px solid rgba(232,169,53,.3); color:var(--amber); }
+  /* ── Strategic Assessment Panels (Section 04) ── */
+  .strategic-assessment-panel {
+    background: rgba(232,169,53,.05); border:1px solid rgba(232,169,53,.25);
+    border-left: 3px solid var(--amber); border-radius: 5px;
+    padding: 12px 16px; margin: 14px 0; }
+  .sa-header { font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+               color:var(--amber); margin-bottom:8px; }
+  .sa-body   { font-size:12px; color:var(--text-mid); line-height:1.75;
+               font-family:'Libre Baskerville',serif; }
+  .sa-body strong { color:var(--text); font-style:normal; }
   .bool-row { display:flex; align-items:center; gap:10px; padding:5px 0; font-size:12px; color:var(--text-mid); border-bottom:1px solid var(--border); }
   .bool-row:last-child { border-bottom:none; }
   .bool-icon-yes { color:var(--red);   font-size:14px; }
@@ -2108,6 +2118,56 @@ function renderMemo(m) {
     ? `<div class="rf-banner rf-banner-amber" style="margin-top:10px">&#x26A0; LEVERAGED ISSUER — Debt/EBITDA exceeds institutional threshold. Financial Health &amp; Runway weight increased to 20%.</div>`
     : "";
 
+  // ── Strategic assessment panels (RF-19, valuation ceiling, leverage) ────────
+  // These render directly in Section 04 after the flag list, with the verdict in bold.
+  const _renderAssessment = (label, icon, text) => {
+    if (!text) return "";
+    // Detect the verdict sentence patterns and bold them
+    const verdictPatterns = [
+      /('Deleveraging is strategically sound[^']*')/,
+      /('Deleveraging primarily transfers risk[^']*')/,
+      /('Premium is supportable[^']*')/,
+      /('Premium is not supportable[^']*')/,
+      /('Leverage is within sector norms[^']*')/,
+      /('Leverage exceeds sector norms[^']*')/,
+    ];
+    let rendered = safeRender(text);
+    verdictPatterns.forEach(pat => {
+      rendered = rendered.replace(pat, '<strong style="color:var(--text)">$1</strong>');
+    });
+    // Also bold the last sentence if it starts with a known verdict opener
+    rendered = rendered.replace(
+      /(Deleveraging (?:is strategically sound|primarily transfers)[^.]+\.)/g,
+      '<strong style="color:var(--text)">$1</strong>'
+    ).replace(
+      /(Premium (?:is supportable|is not supportable)[^.]+\.)/g,
+      '<strong style="color:var(--text)">$1</strong>'
+    ).replace(
+      /(Leverage (?:is within|exceeds) sector norms[^.]+\.)/g,
+      '<strong style="color:var(--text)">$1</strong>'
+    );
+    return `<div class="strategic-assessment-panel">
+      <div class="sa-header">${icon} ${label}</div>
+      <div class="sa-body">${rendered}</div>
+    </div>`;
+  };
+
+  const proceedsAssessmentHtml = _renderAssessment(
+    "Proceeds Quality Assessment",
+    "&#x2696;",
+    m.proceeds_quality_assessment
+  );
+  const valuationCeilingHtml = _renderAssessment(
+    "Valuation Ceiling Assessment",
+    "&#x1F4CA;",
+    m.valuation_ceiling_assessment
+  );
+  const leverageAssessmentHtml = _renderAssessment(
+    "Leverage Assessment",
+    "&#x26A0;",
+    m.leverage_assessment
+  );
+
   // Strip leading numbering Claude may have prepended (e.g. "1. ", "1) ")
   const stripLeadingNum = s => String(s).replace(/^\s*\d+[.):\-]\s*/, "");
 
@@ -2267,6 +2327,16 @@ function renderMemo(m) {
     const _adjTxt = scores.adjustments.map(a => `${a.trigger || a.rule || "Adj"} — ${a.description || (a.penalty != null ? a.penalty + "\u202fpts" : "")}`).join("; ");
     _coverAlerts.push(`<span class="cover-alert cover-alert-amber no-print">&#x26A0; Score Adj: ${_adjTxt}</span>`);
   }
+  // Strategic assessment cover alerts — visible chip when field is populated
+  if (m.proceeds_quality_assessment) {
+    _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x2696; RF-19 Assessment — see Section 04</span>`);
+  }
+  if (m.valuation_ceiling_assessment) {
+    _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x1F4CA; Valuation Ceiling Assessment — see Section 04</span>`);
+  }
+  if (m.leverage_assessment) {
+    _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x26A0; Leverage Assessment — see Section 04</span>`);
+  }
   const _coverAlertsHtml = _coverAlerts.length > 0
     ? `<div class="cover-alerts-row">${_coverAlerts.join("")}</div>` : "";
 
@@ -2391,6 +2461,9 @@ function renderMemo(m) {
         <h3><span class="section-num">04</span> Risk &amp; Red Flags</h3>
         ${flagListHtml}
         ${pdfFlagTable}
+        ${proceedsAssessmentHtml}
+        ${valuationCeilingHtml}
+        ${leverageAssessmentHtml}
         <p class="memo-prose key-risk-narrative">${riskNarrative}</p>
       </div>
 

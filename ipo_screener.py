@@ -530,11 +530,15 @@ Analyze the following from the filing text provided:
     - Compute sector median EV/Revenue and EV/EBITDA from your comp set.
     - Calculate premium_to_sector_median_pct = (subject EV/Revenue − median) / median × 100.
     - Set valuation_flag = true if subject EV/Revenue > 2× sector median, OR if
-      EV/EBITDA > 20× on a GAAP-unprofitable company with no clear path to profitability.
+      EV/EBITDA > 20× on a GAAP-unprofitable company.
     - VALUATION MUST ACCOUNT FOR PROFITABILITY: Do NOT use EV/Revenue discount to sector
       median as a positive signal for a GAAP-loss company. The correct primary metric for
       unprofitable companies is EV/EBITDA or EV/Adj.EBITDA. A discount is EXPECTED and
       does not constitute an attractive valuation.
+    - EV/EBITDA CEILING: When EV/EBITDA > 20× on a GAAP-loss company, populate
+      valuation_ceiling_assessment (see STRATEGIC ASSESSMENT FIELDS below). Flag fires
+      at HIGH severity (deduct 2.5 from Valuation Attractiveness). No automatic
+      PASS override — assessment informs scoring, recommendation set by framework.
     - SOURCE VERIFICATION: For every market statistic cited in the valuation narrative
       (sector multiples, comp company revenues, market share data), identify whether the
       source is tier_1 (WSJ, Bloomberg, Reuters, FT, NYT), tier_2 (PitchBook, Damodaran,
@@ -651,11 +655,14 @@ RF-18 WORKING CAPITAL STRESS -- Negative working capital or deteriorating curren
 
 RF-19 PROCEEDS QUALITY       -- >30% of gross IPO proceeds directed to debt repayment,
                                sponsor distributions, or existing shareholder liquidity
-                               rather than company operations (growth capex, R&D,
-                               working capital, acquisitions). Signals deal structured
-                               for insider benefit rather than company growth. Calculate
+                               rather than company operations. Calculate
                                total_non_operational_pct and flag if it exceeds 30%
                                even when RF-04 (secondary share %) is not triggered.
+                               HIGH severity, deducts 2.5 pts from Management &
+                               Governance. WHEN TRIGGERED: populate
+                               proceeds_quality_assessment (see STRATEGIC ASSESSMENT
+                               FIELDS below). No automatic PASS override — scoring
+                               framework determines the recommendation.
 
 RF-20 SYNDICATE SPREAD RISK  -- More than 4 lead/co-manager underwriters on a deal
                                below $500M offering size. Signals difficulty placing
@@ -724,7 +731,9 @@ as the sum of (raw_dimension_score × weight × 10) across all five dimensions.
   Valuation Attractiveness             20%    valuation_attractiveness
 
 RED FLAG DEDUCTION AMOUNTS BY SEVERITY:
-  CRITICAL  → AUTOMATIC PASS (score irrelevant — override immediately)
+  CRITICAL  → RF-01B only: AUTOMATIC PASS (structural going concern — no exceptions).
+             All other CRITICAL-severity flags deduct from the affected dimension
+             score but do NOT force any recommendation outcome.
   HIGH      → deduct 2.5 pts from the affected dimension score
   MEDIUM    → deduct 1.5 pts from the affected dimension score
   LOW       → deduct 1.0 pt  from the affected dimension score
@@ -772,7 +781,8 @@ RED FLAG → DIMENSION ASSIGNMENTS (explicit mapping — apply these deductions)
   NOTE — RF-20 (Syndicate Spread Risk) is applied as a post-hoc Python penalty to
   weighted_total directly (-1.5 per excess underwriter, capped at -5). It does NOT
   map to a dimension score. Do NOT apply it to any dimension; the pipeline handles it.
-  RF-22 (Small Firm Suitability) is a strong PASS signal — assign recommendation PASS.
+  RF-22 (Small Firm Suitability) is a strong PASS signal — recommendation is typically
+  PASS unless extraordinary circumstances are documented in detail.
 
 BUSINESS MODEL QUALITY — SECTOR-ADJUSTED RUBRIC ANCHORS:
   Universal anchors:
@@ -841,6 +851,14 @@ MANAGEMENT & GOVERNANCE — DUAL-CLASS GOVERNANCE ASSESSMENT:
   These caps and deductions are enforced by Python post-processing in addition to
   being reflected in your dimension score.
 
+LEVERAGE THRESHOLD ASSESSMENT:
+  When Debt/EBITDA exceeds 4x on a GAAP-profitable company, OR Debt/Adj.EBITDA
+  exceeds 6x with interest expense >20% of revenue on a GAAP-loss company, populate
+  leverage_assessment (see STRATEGIC ASSESSMENT FIELDS below). This is a risk signal,
+  not an automatic outcome — evaluate sector context, debt maturity, interest coverage
+  trajectory, and capital structure appropriateness. No FHR hard floor is applied;
+  the scoring framework determines the recommendation.
+
 RECOMMENDATION THRESHOLDS:
   >=75  -> UNDERWRITE          -- Present to deal committee
   65-74 -> CONDITIONAL LIGHT   -- Minor conditions, likely to underwrite with small adjustments
@@ -861,6 +879,47 @@ DEAL COMMITTEE NARRATIVE:
   driver (e.g., valuation, financial health, governance), and note the single most
   important risk or condition. This field is required — do not leave it empty.
 
+
+
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+STRATEGIC ASSESSMENT FIELDS (required when conditions triggered)
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+
+These three fields are REQUIRED when the respective condition is detected.
+Each must end with the exact one-sentence verdict so the analyst sees the
+strategic conclusion immediately.
+
+PROCEEDS_QUALITY_ASSESSMENT (required when RF-19 triggers):
+  Evaluate: (1) what specific debt is retired and at what interest rate/maturity;
+  (2) whether deleveraging materially improves risk profile and cost of capital;
+  (3) whether remaining debt is sustainable post-IPO; (4) whether this is a PE exit /
+  LBO unwind or strategic balance sheet repair; (5) whether cash flow covers remaining
+  obligations; (6) long-term merit: does this strengthen the company, or transfer risk
+  from private investors to the public without operational improvement?
+  End with exactly one of:
+    'Deleveraging is strategically sound and supports long-term value creation.'
+  OR
+    'Deleveraging primarily transfers risk to public investors without operational improvement.'
+
+VALUATION_CEILING_ASSESSMENT (required when EV/EBITDA > 20x on a GAAP-loss company):
+  Evaluate: (1) revenue growth rate and trend; (2) sector norms for premium multiples
+  on a credible path-to-profitability thesis (AI, biotech, high-growth SaaS); (3)
+  competitive moat and pricing power; (4) realistic timeline to breakeven; (5)
+  precedent IPO comps in the same vertical.
+  End with exactly one of:
+    'Premium is supportable given [specific factor].'
+  OR
+    'Premium is not supportable at current growth and margin trajectory.'
+
+LEVERAGE_ASSESSMENT (required when Debt/EBITDA > 4x on profitable, OR Debt/Adj.EBITDA
+  > 6x with interest >20% of revenue on GAAP-loss):
+  Evaluate: (1) sector-normal leverage ratio; (2) debt maturity and refinancing risk;
+  (3) EBITDA/interest coverage trend; (4) whether IPO proceeds delever the balance sheet;
+  (5) whether leverage is operational (growth capex, acquisition) or distressed.
+  End with exactly one of:
+    'Leverage is within sector norms and sustainable given the business model.'
+  OR
+    'Leverage exceeds sector norms and represents material refinancing/solvency risk.'
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 OUTPUT FORMAT -- RETURN AS VALID JSON ONLY
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
@@ -1089,6 +1148,10 @@ Use this exact schema:
     "bear_case": []
   },
   "deal_committee_recommendation": "",
+
+  "proceeds_quality_assessment": "",
+  "valuation_ceiling_assessment": "",
+  "leverage_assessment": "",
 
   "accounting_practices": {
     "items": [
@@ -3239,65 +3302,59 @@ def apply_leverage_adjustments(memo: dict) -> dict:
 
 def apply_leverage_floor(memo: dict) -> dict:
     """
-    Enforce hard floor on Financial Health score for highly-leveraged issuers.
+    Detect high-leverage conditions and note them for analyst review.
 
-    Rules:
-      - GAAP-profitable + Debt/EBITDA > 4x  → FHR cannot exceed 4.0
-      - GAAP-loss + Debt/AdjEBITDA > 6x
-        AND interest_expense > 20% of revenue → FHR cannot exceed 4.0
-    Recalculates weighted_total if FHR is capped.
+    Previously applied a hard cap to FHR at 4.0 — that behavior is removed.
+    The function now only detects the threshold and adds a note to adjustments
+    (without modifying any dimension score or weighted_total). Opus is instructed
+    to populate leverage_assessment when this condition is present.
+
+    Detection thresholds (unchanged):
+      - GAAP-profitable + Debt/EBITDA > 4x
+      - GAAP-loss + Debt/AdjEBITDA > 6x AND interest_expense > 20% of revenue
     """
     scores = memo.get("scores") or {}
     fin    = memo.get("financials") or {}
     fhr    = scores.get("financial_health_runway")
-    if fhr is None or fhr <= 4.0:
-        return memo  # already below floor; nothing to enforce
 
-    total_debt  = fin.get("total_debt_usd_millions") or 0
-    ebitda      = fin.get("ebitda_usd_millions")
-    net_income  = fin.get("net_income_usd_millions")
-    rev         = (fin.get("revenue_ttm_usd_millions")
-                   or (fin.get("revenue_usd_millions") or {}).get("ttm"))
+    total_debt = fin.get("total_debt_usd_millions") or 0
+    ebitda     = fin.get("ebitda_usd_millions")
+    net_income = fin.get("net_income_usd_millions")
+    rev        = (fin.get("revenue_ttm_usd_millions")
+                  or (fin.get("revenue_usd_millions") or {}).get("ttm"))
 
     if not ebitda or ebitda <= 0 or total_debt <= 0:
         return memo
 
     leverage_ratio = total_debt / ebitda
     is_gaap_loss   = (net_income is not None and net_income < 0)
-    cap_triggered  = False
+    threshold_met  = False
 
     if not is_gaap_loss and leverage_ratio > 4.0:
-        cap_triggered = True
+        threshold_met = True
     elif is_gaap_loss and leverage_ratio > 6.0:
-        # Also require interest > 20% revenue
         interest = fin.get("interest_expense_usd_millions")
         if interest and rev and rev > 0 and (interest / rev) > 0.20:
-            cap_triggered = True
+            threshold_met = True
 
-    if not cap_triggered:
+    if not threshold_met:
         return memo
 
-    old_fhr = fhr
-    scores["financial_health_runway"] = 4.0
-    fhr_w = scores.get("fhr_weight_used") or 0.15
-    va_w  = scores.get("va_weight_used")  or 0.20
-
-    bmq = scores.get("business_model_quality") or 0
-    mcp = scores.get("market_competitive_position") or 0
-    mg  = scores.get("management_governance") or 0
-    va  = scores.get("valuation_attractiveness") or 0
-    new_wt = round((bmq * 0.25 + 4.0 * fhr_w + mcp * 0.20 + mg * 0.20 + va * va_w) * 10, 1)
-
-    adj_list = scores.get("adjustments") or []
+    # Note the condition without capping any score
+    adj_list = list(scores.get("adjustments") or [])
     adj_list.append({
-        "rule":    "Leverage hard floor",
-        "detail":  f"FHR capped at 4.0 (was {old_fhr}); D/EBITDA {leverage_ratio:.1f}x",
-        "penalty": round(new_wt - (scores.get("weighted_total") or 0), 1),
+        "rule":    "Leverage threshold detected",
+        "detail":  (f"D/EBITDA {leverage_ratio:.1f}x — exceeds threshold "
+                    f"({'4x profitable' if not is_gaap_loss else '6x + interest >20% rev'}). "
+                    f"See leverage_assessment for strategic evaluation. No FHR cap applied."),
+        "penalty": 0,
     })
-    scores["weighted_total"] = new_wt
-    scores["adjustments"]    = adj_list
-    memo["scores"]           = scores
-    log.info(f"Leverage hard floor applied — FHR capped {old_fhr}→4.0, new score: {new_wt}")
+    scores["adjustments"] = adj_list
+    memo["scores"]        = scores
+    log.info(
+        f"Leverage threshold detected ({leverage_ratio:.1f}x D/EBITDA) — "
+        f"noted in adjustments, no score cap applied"
+    )
     return memo
 
 
@@ -3443,7 +3500,7 @@ def apply_scoring_adjustments(memo: dict) -> dict:
     Steps (in order):
       1. apply_valuation_rules       — suppress RF-07/07A/07B + set VA=6.0 for unpriced deals
       2. apply_leverage_adjustments  — reweight FHR/VA for leveraged issuers
-      3. apply_leverage_floor        — enforce FHR hard floor at 4.0
+      3. apply_leverage_floor        — detect high leverage, note in adjustments (no cap)
       4. apply_governance_cap        — founder track record deduction for dual-class
       5. RF-20 syndicate spread      — -1.5 per excess underwriter, capped at -5
       6. Re-derive recommendation    — 75/65/55 thresholds
