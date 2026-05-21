@@ -2197,6 +2197,9 @@ function renderMemo(m) {
     const _gcType = m.going_concern_type === "capital_deficient" ? "Capital-Deficient" : "Structural";
     _coverAlerts.push(`<span class="cover-alert cover-alert-red">GOING CONCERN \u2014 ${_gcType}</span>`);
   }
+  if (m.pricing_tbd_flag) {
+    _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x23F3; PRICING TBD \u2014 valuation deferred</span>`);
+  }
   if ((scores.adjustments || []).length > 0) {
     const _adjTxt = scores.adjustments.map(a => `${a.trigger || a.rule || "Adj"} — ${a.description || (a.penalty != null ? a.penalty + "\u202fpts" : "")}`).join("; ");
     _coverAlerts.push(`<span class="cover-alert cover-alert-amber">&#x26A0; Score Adj: ${_adjTxt}</span>`);
@@ -2453,12 +2456,22 @@ function buildSectionManagement(m) {
     const cls = pct < 50 ? "style='color:var(--amber);font-weight:600'" : "";
     return `<span ${cls}>${pct}%${pct < 50 ? " ⚠" : ""}</span>`;
   };
+  const _ftrLabels = {
+    "proven_operator":       { label: "Proven Operator",       color: "var(--green)"  },
+    "emerging_operator":     { label: "Emerging Operator",     color: "var(--amber)"  },
+    "first_time_public_ceo": { label: "First-Time Public CEO", color: "var(--amber)"  },
+    "concerning_history":    { label: "Concerning History",    color: "var(--red)"    },
+  };
+  const _ftra    = (mg.founder_track_record_assessment || "").toLowerCase();
+  const _ftrInfo = _ftrLabels[_ftra];
+  const hasFtra  = _ftra && _ftrInfo;
   const rows = [
     hasCeo ? `<tr><td class="label-col">CEO</td><td class="val-col">${mg.ceo_name || "&mdash;"}</td></tr>` : "",
     hasCeo ? `<tr><td class="label-col">CEO Tenure</td><td class="val-col">${tenureFmt(mg.ceo_tenure_months)}</td></tr>` : "",
     hasCfo ? `<tr><td class="label-col">CFO</td><td class="val-col">${mg.cfo_name || "&mdash;"}</td></tr>` : "",
     hasCfo ? `<tr><td class="label-col">CFO Tenure</td><td class="val-col">${tenureFmt(mg.cfo_tenure_months)}</td></tr>` : "",
     hasBoard ? `<tr><td class="label-col">Board Independence</td><td class="val-col">${boardPctFmt(mg.board_independent_pct)}</td></tr>` : "",
+    hasFtra ? `<tr><td class="label-col">Founder Track Record</td><td class="val-col"><span style="color:${_ftrInfo.color};font-weight:600">${_ftrInfo.label}</span>${mg.founder_track_record_reasoning ? `<br><span style="font-size:10px;color:var(--text-dim)">${mg.founder_track_record_reasoning}</span>` : ""}</td></tr>` : "",
   ].filter(Boolean).join("");
   const flagBlock = flags.length > 0
     ? `<div class="flag-list" style="margin-top:10px">${flags.map(f =>

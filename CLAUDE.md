@@ -112,15 +112,27 @@ Deduction amounts by severity (applied to the dimension score before weighting):
 - **RF-07B EV/EBITDA GROWTH MISMATCH:** EV/EBITDA >25x on GAAP-loss + <30% YoY growth,
   OR EV/EBITDA >35x on any GAAP-loss company. HIGH, −2.5
   **Combined RF-07 cap: max −7.5 pts total from all three.**
+- **PRICE-PENDING RULE:** If `proposed_price_range` is null/empty/TBD, RF-07/07A/07B
+  are automatically suppressed by `apply_valuation_rules()` in Python. VA is set to
+  6.0 (neutral) with note "Valuation pending — no offering price disclosed." Cover
+  page shows "PRICING TBD — valuation deferred" amber badge. When price is later
+  disclosed in an amended S-1, flags re-engage normally on the new analysis.
 
 **RF-02 customer concentration thresholds (updated 2026-04-23):**
 - Top customer >40% revenue: HIGH, −2.5 pts from **Market & Competitive Position**
 - Top customer >60% revenue: CRITICAL, −3.0 pts from **Market & Competitive Position**
   (dimension changed from Business Model Quality)
 
-**Management & Governance caps (ISS/Glass Lewis 2025):**
-- Dual-class vote ratio >10:1 + no sunset + founder voting >70%: M&G capped at 5.0
-  (Python-enforced in `apply_governance_cap()`; set `management_governance_cap_reason`)
+**Management & Governance — dual-class founder track record assessment (replaces hard cap):**
+- For any dual-class structure, Opus assigns `founder_track_record_assessment` in `management{}`.
+  Python (`apply_governance_cap()`) applies a deduction based on the tier:
+  - `proven_operator` → −1.0 pt from M&G (e.g. Musk/SpaceX, Zuckerberg, Brin/Page)
+  - `emerging_operator` → −2.5 pts (domain expertise, limited public CEO experience)
+  - `first_time_public_ceo` → −4.0 pts (no prior public company leadership)
+  - `concerning_history` → −5.0 pts (governance failures, SEC actions, conflicts)
+  - Additional −1.5 pts if founder voting >80% post-IPO AND tier is `first_time_public_ceo` or `concerning_history`
+  - If Opus omits the field on a dual-class deal, Python defaults to `emerging_operator`
+  - App renders "Founder Track Record" row in Section 11 Management & Board with color coding
 - Independent board <50%: deduct 2.5 pts (HIGH)
 - No lead independent director: deduct 1.5 pts (MEDIUM)
 

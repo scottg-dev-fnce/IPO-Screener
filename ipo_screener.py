@@ -606,6 +606,13 @@ RF-07B EV/EBITDA GROWTH MISMATCH -- EV/EBITDA >25x on GAAP-loss companies growin
                                COMBINED CAP: Maximum total Valuation deduction from all
                                three RF-07 flags is 7.5 pts (floor at 0.0).
 
+PRICE-PENDING RULE: If proposed_price_range is null, empty, or "TBD", do NOT trigger
+                               RF-07, RF-07A, or RF-07B. No offering price has been set,
+                               so valuation cannot be evaluated. Set valuation_attractiveness
+                               to 6.0 (neutral) with the note "Valuation pending — no
+                               offering price disclosed." Python post-processing enforces
+                               this automatically — you must also respect it in scoring.
+
 RF-08 MANAGEMENT RED FLAGS  -- CEO or CFO tenure <12 months. Prior failures or
                                SEC enforcement. Key-man concentration without succession.
 
@@ -794,13 +801,40 @@ BUSINESS MODEL QUALITY — SECTOR-ADJUSTED RUBRIC ANCHORS:
   NRR benchmarks (subscription/SaaS businesses only):
     world-class >120%  |  good 105–120%  |  acceptable 90–105%  |  concerning <90%
 
-MANAGEMENT & GOVERNANCE — SCORE CAPS (ISS / Glass Lewis 2025 standards):
-  Cap 1: Extreme dual-class structure — if ALL three conditions are met:
-    (a) vote ratio >10:1 between insider and public share classes,
-    (b) no time-based or market-cap-based sunset clause, AND
-    (c) founder/insider voting control >70% post-IPO
-    → Management & Governance CANNOT score above 5.0 regardless of other factors.
-    Set management_governance_cap_reason: "extreme_dual_class".
+MANAGEMENT & GOVERNANCE — DUAL-CLASS GOVERNANCE ASSESSMENT:
+  When a dual-class share structure exists, assess the FOUNDER TRACK RECORD across
+  five dimensions: (1) prior public company CEO experience, (2) domain expertise,
+  (3) capital allocation track record, (4) regulatory/compliance history, and
+  (5) length of tenure and milestones achieved.
+
+  Assign one of four tiers and populate "founder_track_record_assessment" in management{}:
+
+  "proven_operator"       — Prior successful public CEO, deep domain expertise, clean
+                            regulatory record, multi-year milestone track record.
+                            Examples: Musk (SpaceX/Tesla), Zuckerberg, Brin/Page.
+                            Python M&G deduction: −1.0 pt.
+
+  "emerging_operator"     — Strong domain expertise, limited public company leadership,
+                            clean record, early track record of milestones.
+                            Python M&G deduction: −2.5 pts.
+
+  "first_time_public_ceo" — No prior public company leadership, limited verifiable
+                            track record in this role. Standard pre-IPO founder risk.
+                            Python M&G deduction: −4.0 pts.
+
+  "concerning_history"    — Prior governance failures, SEC/regulatory actions, related
+                            party conflicts, compensation controversies, or material
+                            misstatements. Significant integrity risk.
+                            Python M&G deduction: −5.0 pts.
+
+  Additional −1.5 pts if founder voting control >80% post-IPO AND tier is
+  "first_time_public_ceo" OR "concerning_history" (compounding concentration risk).
+
+  You MUST populate founder_track_record_assessment for any company with a dual-class
+  structure. Include brief reasoning in management_flags[]. Python post-processing
+  (apply_governance_cap) enforces these deductions after your score is returned —
+  score your raw assessment before governance deductions.
+
   Cap 2: Independent board <50% — deduct 2.5 pts (HIGH flag). This is separate
     from RF-06 and accumulates with it.
   Cap 3: No lead independent director designated — deduct 1.5 pts (MEDIUM flag).
@@ -918,6 +952,8 @@ Use this exact schema:
     "cfo_name": "",
     "cfo_tenure_months": null,
     "board_independent_pct": null,
+    "founder_track_record_assessment": "",
+    "founder_track_record_reasoning": "",
     "management_flags": []
   },
 
@@ -3265,61 +3301,138 @@ def apply_leverage_floor(memo: dict) -> dict:
     return memo
 
 
-def apply_governance_cap(memo: dict) -> dict:
+def apply_valuation_rules(memo: dict) -> dict:
     """
-    Enforce Management & Governance score cap per ISS/Glass Lewis 2025 standards.
+    Suppress valuation flags for unpriced deals.
 
-    Cap condition (all three must be true):
-      (a) vote_ratio > 10:1 (dual-class insider vs public)
-      (b) no sunset clause
-      (c) founder voting control > 70% post-IPO
-    → Management & Governance cannot exceed 5.0
+    When proposed_price_range is null, empty, or 'TBD', RF-07/07A/07B are not
+    applicable — no offering price has been set so valuation cannot be assessed.
+    Sets VA to neutral 6.0, removes any RF-07* flags Opus may have added, and
+    sets pricing_tbd_flag=True for the app's cover-page alerts strip.
     """
-    scores = memo.get("scores") or {}
-    mg_score = scores.get("management_governance")
-    if mg_score is None or mg_score <= 5.0:
-        return memo  # already at or below cap
+    price_range = (memo.get("proposed_price_range") or "").strip().upper()
+    unpriced_values = {"", "TBD", "N/A", "—", "-", "PENDING", "TO BE DETERMINED"}
+    if price_range and price_range not in unpriced_values:
+        return memo  # priced deal — no action needed
 
-    ownership = memo.get("ownership") or {}
-    cap_reason = memo.get("management_governance_cap_reason") or ""
+    scores   = memo.get("scores") or {}
+    old_va   = scores.get("valuation_attractiveness")
 
-    dual_class       = ownership.get("dual_class_structure") or False
-    founder_voting   = ownership.get("founder_post_ipo_voting_control_pct") or 0
-    sunset_clause    = ownership.get("dual_class_sunset_clause") or False
+    # Remove any RF-07/07A/07B flags Opus may have triggered
+    rf_flags    = memo.get("red_flags") or []
+    kept_flags  = []
+    removed_ids = []
+    for flag in rf_flags:
+        flag_id = (flag.get("flag_id") or flag.get("code") or "").upper().replace("-", "")
+        if flag_id in ("RF07", "RF07A", "RF07B"):
+            removed_ids.append(flag_id)
+        else:
+            kept_flags.append(flag)
 
-    # Check if Opus flagged it directly
-    if cap_reason == "extreme_dual_class":
-        trigger = True
-    elif dual_class and founder_voting > 70 and not sunset_clause:
-        trigger = True
-    else:
-        trigger = False
+    memo["red_flags"]     = kept_flags
+    memo["red_flag_count"] = len(kept_flags)
 
-    if not trigger:
-        return memo
+    # Set VA to neutral 6.0
+    scores["valuation_attractiveness"] = 6.0
 
-    old_mg = mg_score
-    scores["management_governance"] = 5.0
     fhr_w = scores.get("fhr_weight_used") or 0.15
     va_w  = scores.get("va_weight_used")  or 0.20
+    bmq = scores.get("business_model_quality") or 0
+    fhr = scores.get("financial_health_runway") or 0
+    mcp = scores.get("market_competitive_position") or 0
+    mg  = scores.get("management_governance") or 0
+    new_wt = round((bmq * 0.25 + fhr * fhr_w + mcp * 0.20 + mg * 0.20 + 6.0 * va_w) * 10, 1)
 
+    adj_list = list(scores.get("adjustments") or [])
+    detail = "No offering price disclosed — valuation flags suppressed; VA set to 6.0 (neutral)"
+    if removed_ids:
+        detail += f" (removed: {', '.join(removed_ids)})"
+    adj_list.append({
+        "rule":    "Valuation deferred (unpriced deal)",
+        "detail":  detail,
+        "penalty": 0,
+    })
+    scores["weighted_total"] = new_wt
+    scores["adjustments"]    = adj_list
+    memo["scores"]           = scores
+    memo["pricing_tbd_flag"] = True
+    log.info(f"Pricing TBD — valuation flags suppressed, VA set to 6.0, new score: {new_wt}")
+    return memo
+
+
+def apply_governance_cap(memo: dict) -> dict:
+    """
+    Apply founder track record deduction for dual-class governance structures.
+
+    Replaces the old 5.0 hard cap with a nuanced deduction based on four tiers:
+      proven_operator       → −1.0 pt from M&G
+      emerging_operator     → −2.5 pts from M&G
+      first_time_public_ceo → −4.0 pts from M&G
+      concerning_history    → −5.0 pts from M&G
+
+    Additional −1.5 pts if founder voting control >80% post-IPO AND tier is
+    first_time_public_ceo or concerning_history.
+    """
+    ownership  = memo.get("ownership") or {}
+    management = memo.get("management") or {}
+    scores     = memo.get("scores") or {}
+    mg_score   = scores.get("management_governance")
+
+    if mg_score is None:
+        return memo
+
+    dual_class = ownership.get("dual_class_structure") or False
+    if not dual_class:
+        return memo
+
+    TIER_DEDUCTIONS = {
+        "proven_operator":       1.0,
+        "emerging_operator":     2.5,
+        "first_time_public_ceo": 4.0,
+        "concerning_history":    5.0,
+    }
+
+    tier = (management.get("founder_track_record_assessment") or "").strip().lower()
+    if tier not in TIER_DEDUCTIONS:
+        # Opus did not populate — default to emerging_operator for dual-class deals
+        tier = "emerging_operator"
+        management["founder_track_record_assessment"] = tier
+        memo["management"] = management
+
+    deduction = TIER_DEDUCTIONS[tier]
+
+    # Additional penalty for extreme voting concentration + weak track record
+    founder_voting = ownership.get("founder_post_ipo_voting_control_pct") or 0
+    extra_penalty  = 0.0
+    if founder_voting > 80 and tier in ("first_time_public_ceo", "concerning_history"):
+        extra_penalty = 1.5
+
+    total_deduction = deduction + extra_penalty
+    old_mg  = mg_score
+    new_mg  = max(0.0, round(mg_score - total_deduction, 1))
+    scores["management_governance"] = new_mg
+
+    fhr_w = scores.get("fhr_weight_used") or 0.15
+    va_w  = scores.get("va_weight_used")  or 0.20
     bmq = scores.get("business_model_quality") or 0
     fhr = scores.get("financial_health_runway") or 0
     mcp = scores.get("market_competitive_position") or 0
     va  = scores.get("valuation_attractiveness") or 0
-    new_wt = round((bmq * 0.25 + fhr * fhr_w + mcp * 0.20 + 5.0 * 0.20 + va * va_w) * 10, 1)
+    new_wt = round((bmq * 0.25 + fhr * fhr_w + mcp * 0.20 + new_mg * 0.20 + va * va_w) * 10, 1)
 
-    adj_list = scores.get("adjustments") or []
+    adj_list = list(scores.get("adjustments") or [])
+    detail = f"Dual-class governance — {tier} (−{deduction:.1f}pt deduction)"
+    if extra_penalty > 0:
+        detail += f" + −{extra_penalty:.1f}pt for >{founder_voting:.0f}% voting concentration"
     adj_list.append({
-        "rule":    "Governance cap",
-        "detail":  f"M&G capped at 5.0 (was {old_mg}); extreme dual-class structure",
-        "penalty": round(new_wt - (scores.get("weighted_total") or 0), 1),
+        "rule":    "Dual-class governance assessment",
+        "detail":  detail,
+        "penalty": round(-(total_deduction * 0.20 * 10), 1),
     })
-    scores["weighted_total"]             = new_wt
-    scores["adjustments"]                = adj_list
-    memo["scores"]                       = scores
-    memo["management_governance_cap_reason"] = "extreme_dual_class"
-    log.info(f"Governance cap applied — M&G capped {old_mg}→5.0, new score: {new_wt}")
+    scores["weighted_total"] = new_wt
+    scores["adjustments"]    = adj_list
+    memo["scores"]           = scores
+    log.info(f"Governance deduction applied — M&G {old_mg}→{new_mg} ({tier}), new score: {new_wt}")
     return memo
 
 
@@ -3328,15 +3441,17 @@ def apply_scoring_adjustments(memo: dict) -> dict:
     Apply post-hoc score penalties and structural overrides after Opus scoring.
 
     Steps (in order):
-      1. apply_leverage_adjustments  — reweight FHR/VA for leveraged issuers
-      2. apply_leverage_floor        — enforce FHR hard floor at 4.0
-      3. apply_governance_cap        — enforce M&G cap at 5.0 (extreme dual-class)
-      4. RF-20 syndicate spread      — -1.5 per excess underwriter, capped at -5
-      5. Re-derive recommendation    — 75/65/55 thresholds
-      6. RF-01B going concern        — AUTOMATIC PASS override (structural)
+      1. apply_valuation_rules       — suppress RF-07/07A/07B + set VA=6.0 for unpriced deals
+      2. apply_leverage_adjustments  — reweight FHR/VA for leveraged issuers
+      3. apply_leverage_floor        — enforce FHR hard floor at 4.0
+      4. apply_governance_cap        — founder track record deduction for dual-class
+      5. RF-20 syndicate spread      — -1.5 per excess underwriter, capped at -5
+      6. Re-derive recommendation    — 75/65/55 thresholds
+      7. RF-01B going concern        — AUTOMATIC PASS override (structural)
 
     After all adjustments, re-derives recommendation from weighted_total.
     """
+    memo = apply_valuation_rules(memo)
     memo = apply_leverage_adjustments(memo)
     memo = apply_leverage_floor(memo)
     memo = apply_governance_cap(memo)
