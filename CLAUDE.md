@@ -179,7 +179,8 @@ Automatic PASS override:
 | RF-20 | Syndicate Spread Risk | Python post-hoc | HIGH | −1.5/excess, cap −5 |
 | RF-21 | PE/Sponsor Overhang | Mgmt & Governance | MEDIUM | −1.5 |
 | RF-22 | Small Firm Suitability | (strong PASS) | HIGH | N/A |
-| RF-23 | Insider Liquidity Overhang | Mgmt & Governance | MEDIUM | −1.5 |
+| RF-23 | Insider Liquidity Overhang (CRITICAL) | Mgmt & Governance | CRITICAL | −3.0 |
+| RF-23 | Insider Liquidity Overhang (HIGH) | Mgmt & Governance | HIGH | −2.5 |
 | RF-24 | Auditor Quality Risk | Financial Health | MEDIUM | −1.5 |
 | RF-25 | Accounting Quality Risk | Financial Health + BMQ | HIGH | −2.5 each |
 
@@ -294,7 +295,15 @@ RF-19: PROCEEDS QUALITY — >30% of gross IPO proceeds to debt repayment, sponso
 RF-20: SYNDICATE SPREAD RISK — More than 4 lead/co-manager underwriters on a deal below $500M. Signals difficulty placing the book.
 RF-21: PE / SPONSOR OVERHANG — PE/sponsor ownership >40% post-IPO with lockup ≤180 days; predictable secondary selling pressure.
 RF-22: SMALL FIRM SUITABILITY — Offering size <$50M, or TTM revenue <$10M, or pre-revenue stage. Strong PASS signal (not automatic override).
-RF-23: INSIDER LIQUIDITY OVERHANG — Secondary shares exceed 20% of total offering.
+RF-23: INSIDER LIQUIDITY OVERHANG — Graduated trigger framework (Python enforces deductions):
+CRITICAL (−3.0 M&G): Secondary >20% of offering AND lockup_days <180. Combined exit signal.
+CRITICAL (−3.0 M&G): No lockup disclosed for any insider class.
+HIGH (−2.5 M&G):     Lockup <90 days — below institutional minimum.
+HIGH (−2.5 M&G):     Performance-based early release triggerable within 60 days at 10-15% gain.
+HIGH (−2.5 M&G):     Material carveouts allowing founders/executives/>5% holders to sell during lockup.
+NO TRIGGER:          Standard 90-day-or-longer cliff/rolling lockups with routine de minimis carveouts
+                     are institutional norm. 180-day+ cliff with no material carveouts is Investor-Friendly.
+                     Python owns all RF-23 deductions; Opus sets rf23_triggered/rf23_reason only.
 RF-24: AUDITOR QUALITY RISK — Auditor is not Big 4 or recognized mid-tier on a deal with offering size >$50M.
 RF-25: ACCOUNTING QUALITY RISK — Overall Accounting Quality Score ≤5. Multiple aggressive accounting policy choices.
 
@@ -441,6 +450,43 @@ Key functions:
 - `enrich_with_damodaran()` — maps company sector to Damodaran industry via SIC code or keyword match
 - `apply_scoring_adjustments()` — post-hoc score penalties; re-derives recommendation
 - `save_memo()` — writes to memos/{run_date}/{slug}.json; for S-1/A also overwrites prior date file and backs up original
+
+### lockup_analysis{} Schema (Section 14)
+
+| Field | Type | Description |
+|---|---|---|
+| `lockup_days` | int | Standard lockup duration in days |
+| `lockup_shares_count` | int | Total shares subject to lockup |
+| `lockup_pct_of_outstanding` | float | Locked shares as % of post-IPO shares outstanding |
+| `lockup_structure_type` | string | `'cliff'` / `'rolling'` / `'performance_based'` / `'hybrid'` |
+| `lockup_release_schedule` | array | `[{release_date_days, pct_released, notes}]` for rolling; empty for cliff |
+| `early_release_triggers` | array | Each trigger condition as a separate string |
+| `parties_locked_up` | array | Who is subject to lockup (founders, executives, investors, etc.) |
+| `lockup_carveouts` | array | Material permitted sale exceptions only (omit routine de minimis) |
+| `lockup_investor_assessment` | string | Narrative: Investor-Friendly / Standard / Investor-Unfriendly + reasoning. Always populated. |
+| `primary_shares_millions` | float | Primary shares in millions |
+| `secondary_shares_millions` | float | Secondary shares in millions |
+| `secondary_shares_pct_offering` | float | Secondary as % of total offering |
+| `rf23_triggered` | bool | Set by Opus for subjective conditions; set by Python for objective |
+| `rf23_reason` | string | Specific condition description |
+
+Backward-compat: older memos using `lockup_insider_selling{}` render via field aliases in `buildSection10`.
+
+### RF-23 Graduated Trigger Framework
+
+| Condition | Severity | Deduction | Trigger |
+|---|---|---|---|
+| Secondary >20% AND lockup <180d | CRITICAL | −3.0 M&G | Combined exit signal |
+| No lockup disclosed | CRITICAL | −3.0 M&G | Complete absence |
+| Lockup <90 days | HIGH | −2.5 M&G | Below institutional minimum |
+| Perf-based early release <60d at 10-15% gain | HIGH | −2.5 M&G | Underwriter accommodation |
+| Material carveouts (founders/executives/>5% holders) | HIGH | −2.5 M&G | Undermines lockup purpose |
+| 90-day-or-longer cliff/rolling, no material carveouts | **NO TRIGGER** | 0 | Institutional norm |
+| 180-day+ cliff, no early release | **Investor-Friendly** | 0 | Explicitly positive |
+
+Python enforces objective conditions (lockup <90d, combined secondary+lockup, no-lockup).
+Opus detects subjective conditions (performance triggers, material carveouts) and sets `rf23_triggered`.
+Deductions are not stacked — worst single condition applies.
 
 ### Fetch Script (`fetch_only.py`)
 Decoupled fetcher — identical EDGAR logic but only saves raw text to `raw/` and writes `raw/queue.json`. Used to batch-fetch filings for manual Claude Code analysis without triggering the Anthropic API.

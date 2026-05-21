@@ -258,10 +258,34 @@ Analyze the following from the filing text provided:
       research firms).
 
 [L] LOCKUP & INSIDER SELLING
-    - Extract lockup period in days
-    - Identify primary vs secondary share count (primary = new shares; secondary = existing shareholder sell-down)
-    - Flag RF-23 if secondary shares exceed 20% of total offering shares
-    - Note any carve-outs from lockup (early release, market-out clauses)
+    - Extract lockup period in days; identify lockup_structure_type:
+        'cliff'            = single release date (most common; 90-day minimum is institutional norm)
+        'rolling'          = multiple scheduled release tranches
+        'performance_based'= release tied to stock price or financial targets
+        'hybrid'           = combination of cliff + performance or rolling + cliff
+    - Extract lockup_pct_of_outstanding: total locked shares as % of post-IPO shares outstanding
+    - Populate lockup_release_schedule[] with objects {release_date_days, pct_released, notes}
+      for rolling/hybrid; leave empty for pure cliff structures
+    - Populate early_release_triggers[] with each trigger condition as a separate string
+    - Populate parties_locked_up[] with each party category (founders, executives, investors, etc.)
+    - Populate lockup_carveouts[] — list only material carveouts (founder sales, executive sales,
+      major shareholder sales). Routine de minimis items (tax withholding, charitable, 10b5-1 plans,
+      estate planning) are NOT material and should not populate this array.
+    - ALWAYS populate lockup_investor_assessment with a narrative assessing whether the lockup
+      structure is Investor-Friendly, Standard, or Investor-Unfriendly with specific reasoning.
+      A 180-day or longer cliff lockup with no early release is explicitly Investor-Friendly.
+      A 90-day cliff is Standard. Below 90 days is Investor-Unfriendly.
+    - RF-23 TRIGGER CONDITIONS (Python enforces deductions post-hoc — do NOT apply deductions
+      to your dimension scores; only set rf23_triggered and rf23_reason):
+        CRITICAL (-3.0 from M&G): secondary_shares_pct_offering >20% AND lockup_days <180
+        CRITICAL (-3.0 from M&G): no lockup disclosed for any insider class
+        HIGH (-2.5 from M&G):     lockup_days <90
+        HIGH (-2.5 from M&G):     performance-based early release triggerable within 60 days
+                                  post-IPO at price gains of 10-15% above IPO price
+        HIGH (-2.5 from M&G):     material insider carveouts allowing founders/executives/>5%
+                                  holders to sell during the lockup window
+      Standard lockups (>=90 days cliff, minimal de minimis carveouts) do NOT trigger RF-23.
+      When RF-23 fires, set rf23_triggered=true and rf23_reason to the specific condition.
 
 [M] SYNDICATE QUALITY
     - Score lead bookrunner tier:
@@ -682,11 +706,22 @@ RF-22 SMALL FIRM SUITABILITY -- Offering size <$50M, or company TTM revenue <$10
                                meaningful position; analyst coverage economics don't
                                pencil. Recommend PASS unless extraordinary circumstances.
 
-RF-23 INSIDER LIQUIDITY OVERHANG -- Secondary shares exceed 20% of total offering.
-                               Insiders are using the IPO as a partial liquidity event.
-                               Creates misaligned incentives — management selling while
-                               asking public investors to buy. Escalate if company is
-                               pre-profit or has <18 months runway.
+RF-23 INSIDER LIQUIDITY OVERHANG -- Graduated trigger framework. Python enforces
+                               deductions post-hoc; set rf23_triggered + rf23_reason only.
+  CRITICAL (-3.0 M&G): Secondary >20% of offering AND lockup_days <180. Combined
+                        signal: insiders cashing out AND accepting shortened lockup.
+  CRITICAL (-3.0 M&G): No lockup disclosed for any insider class. Complete absence
+                        of lockup is extraordinary and signals lack of conviction.
+  HIGH (-2.5 M&G):      Lockup <90 days. Below institutional minimum; signals
+                        insiders positioning for rapid exit.
+  HIGH (-2.5 M&G):      Performance-based early release triggerable within 60 days
+                        post-IPO on modest price gains (10-15%). Underwriter
+                        accommodation, not market discipline.
+  HIGH (-2.5 M&G):      Material carveouts permitting founders, executives, or
+                        >5% shareholders to sell during the lockup window.
+  NO TRIGGER:           Standard 90-day-or-longer cliff/rolling lockups with
+                        routine de minimis carveouts are institutional norm and
+                        must NOT trigger RF-23 deductions.
 
 RF-24 AUDITOR QUALITY RISK      -- Auditor is not Big 4 or recognized mid-tier firm
                                on a deal with offering size >$50M. Big 4: Deloitte,
@@ -771,7 +806,9 @@ RED FLAG → DIMENSION ASSIGNMENTS (explicit mapping — apply these deductions)
     RF-09  Related Party Risk        MEDIUM  -1.5
     RF-19  Proceeds Quality          HIGH    -2.5
     RF-21  PE/Sponsor Overhang       MEDIUM  -1.5
-    RF-23  Insider Liquidity Overhang MEDIUM -1.5
+    RF-23  Insider Liquidity Overhang (see graduated framework):
+             CRITICAL: secondary >20% + lockup <180d OR no lockup: -3.0
+             HIGH: lockup <90d, perf-based trigger, or material carveouts: -2.5
 
   Valuation Attractiveness (20% base; 15% for leveraged issuers):
     RF-07  Valuation Disconnect      HIGH    -2.5  (extreme catch-all)
@@ -1058,10 +1095,17 @@ Use this exact schema:
 
   "lockup_analysis": {
     "lockup_days": null,
+    "lockup_shares_count": null,
+    "lockup_pct_of_outstanding": null,
+    "lockup_structure_type": "",
+    "lockup_release_schedule": [],
+    "early_release_triggers": [],
+    "parties_locked_up": [],
+    "lockup_carveouts": [],
+    "lockup_investor_assessment": "",
     "primary_shares_millions": null,
     "secondary_shares_millions": null,
     "secondary_shares_pct_offering": null,
-    "lockup_carveouts": "",
     "rf23_triggered": false,
     "rf23_reason": ""
   },
@@ -3493,6 +3537,130 @@ def apply_governance_cap(memo: dict) -> dict:
     return memo
 
 
+
+def apply_rf23_lockup(memo: dict) -> dict:
+    """
+    Post-hoc RF-23 enforcement from lockup_analysis structured fields.
+    Evaluates objective trigger conditions and applies deductions to M&G.
+    Python owns these deductions — Opus sets rf23_triggered/rf23_reason only.
+
+    Trigger hierarchy (worst condition wins; no stacking):
+      CRITICAL -3.0: secondary_pct >20% AND lockup_days <180
+      CRITICAL -3.0: no lockup disclosed for any insider class
+      HIGH     -2.5: lockup_days <90
+      HIGH     -2.5: Opus-flagged rf23_triggered (performance trigger or carveouts)
+    Standard lockups (>=90 days, clean cliff/rolling) → no deduction.
+    """
+    la = (memo.get("lockup_analysis") or {})
+    if not la:
+        return memo
+    scores = memo.get("scores") or {}
+    mg = scores.get("management_governance")
+    if mg is None:
+        return memo
+
+    adjustments = list(scores.get("adjustments") or [])
+    red_flags    = list(memo.get("red_flags") or [])
+
+    lockup_days = la.get("lockup_days")
+    sec_pct     = la.get("secondary_shares_pct_offering")
+    sec_mm      = la.get("secondary_shares_millions")
+
+    deduction    = 0.0
+    is_critical  = False
+    fired_reason = []
+
+    # CRITICAL: secondary >20% AND lockup <180 days (combined condition)
+    if sec_pct is not None and sec_pct > 20 and lockup_days is not None and lockup_days < 180:
+        fired_reason.append(
+            f"Secondary shares {sec_pct:.1f}% of offering combined with "
+            f"lockup of only {lockup_days} days — insiders cashing out with "
+            f"abbreviated lockup signals coordinated exit and lack of conviction."
+        )
+        deduction   = max(deduction, 3.0)
+        is_critical = True
+
+    # CRITICAL: no lockup disclosed for any insider class (with secondary shares)
+    if lockup_days is None and sec_mm is not None and sec_mm > 0:
+        fired_reason.append(
+            f"No lockup period disclosed for any insider class while "
+            f"{sec_mm}M secondary shares are present in the offering."
+        )
+        deduction   = max(deduction, 3.0)
+        is_critical = True
+
+    # HIGH: lockup <90 days
+    if lockup_days is not None and lockup_days < 90:
+        fired_reason.append(
+            f"Lockup period of {lockup_days} days is below the 90-day "
+            f"institutional minimum — signals insiders positioning for rapid post-IPO exit."
+        )
+        deduction = max(deduction, 2.5)
+
+    # HIGH: Opus flagged rf23_triggered (performance trigger or material carveouts)
+    if la.get("rf23_triggered") and la.get("rf23_reason") and not fired_reason:
+        fired_reason.append(la.get("rf23_reason", "Lockup condition flagged by analysis."))
+        deduction = max(deduction, 2.5)
+
+    if not fired_reason or deduction == 0.0:
+        return memo
+
+    severity = "CRITICAL" if is_critical else "HIGH"
+    reason   = " | ".join(fired_reason)
+
+    # Update lockup_analysis flags
+    la["rf23_triggered"] = True
+    la["rf23_reason"]    = reason
+    memo["lockup_analysis"] = la
+
+    # Apply deduction to M&G and recalculate weighted_total
+    new_mg = round(max(0, mg - deduction), 1)
+    scores["management_governance"] = new_mg
+
+    # Use stored weights; default to base weights if not leveraged issuer
+    if memo.get("leveraged_issuer_flag"):
+        wt = round(
+            scores.get("business_model_quality",    0) * 0.25 +
+            scores.get("financial_health_runway",    0) * 0.20 +
+            scores.get("market_competitive_position",0) * 0.20 +
+            new_mg                                       * 0.20 +
+            scores.get("valuation_attractiveness",  0) * 0.15,
+            1
+        )
+    else:
+        wt = round(
+            scores.get("business_model_quality",    0) * 0.25 +
+            scores.get("financial_health_runway",    0) * 0.15 +
+            scores.get("market_competitive_position",0) * 0.20 +
+            new_mg                                       * 0.20 +
+            scores.get("valuation_attractiveness",  0) * 0.20,
+            1
+        )
+    scores["weighted_total"] = wt
+
+    adjustments.append(
+        f"RF-23 {severity}: {reason} "
+        f"\u2212{deduction} pts from M&G ({mg} \u2192 {new_mg})."
+    )
+    scores["adjustments"] = adjustments
+    memo["scores"]        = scores
+
+    # Add to red_flags[] if not already present
+    existing = [f.get("code","") if isinstance(f, dict) else "" for f in red_flags]
+    if "RF-23" not in existing:
+        red_flags.append({
+            "code":        "RF-23",
+            "name":        "INSIDER LIQUIDITY OVERHANG",
+            "severity":    severity,
+            "triggered":   True,
+            "source":      "python_post_hoc",
+            "description": reason,
+        })
+        memo["red_flags"]      = red_flags
+        memo["red_flag_count"] = memo.get("red_flag_count", 0) + 1
+
+    return memo
+
 def apply_scoring_adjustments(memo: dict) -> dict:
     """
     Apply post-hoc score penalties and structural overrides after Opus scoring.
@@ -3502,7 +3670,8 @@ def apply_scoring_adjustments(memo: dict) -> dict:
       2. apply_leverage_adjustments  — reweight FHR/VA for leveraged issuers
       3. apply_leverage_floor        — detect high leverage, note in adjustments (no cap)
       4. apply_governance_cap        — founder track record deduction for dual-class
-      5. RF-20 syndicate spread      — -1.5 per excess underwriter, capped at -5
+      5. apply_rf23_lockup           — lockup condition deductions (graduated RF-23 framework)
+      6. RF-20 syndicate spread      — -1.5 per excess underwriter, capped at -5
       6. Re-derive recommendation    — 75/65/55 thresholds
       7. RF-01B going concern        — AUTOMATIC PASS override (structural)
 
@@ -3512,6 +3681,7 @@ def apply_scoring_adjustments(memo: dict) -> dict:
     memo = apply_leverage_adjustments(memo)
     memo = apply_leverage_floor(memo)
     memo = apply_governance_cap(memo)
+    memo = apply_rf23_lockup(memo)
 
     scores = memo.get("scores") or {}
     wt = scores.get("weighted_total")

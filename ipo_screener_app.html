@@ -1050,6 +1050,26 @@
   .sa-body   { font-size:12px; color:var(--text-mid); line-height:1.75;
                font-family:'Libre Baskerville',serif; }
   .sa-body strong { color:var(--text); font-style:normal; }
+  /* ── Section 14 Lockup timeline ────────────────────────────── */
+  .lt-wrap { position:relative; margin:0 4px 0 8px; }
+  .lt-track { position:relative; height:8px; background:rgba(255,255,255,.08);
+              border-radius:4px; margin-bottom:24px; }
+  .lt-marker { position:absolute; top:0; transform:translateX(-50%); }
+  .lt-marker-line { width:2px; height:16px; background:var(--gold); margin:0 auto; }
+  .lt-marker-label { position:absolute; top:18px; left:50%; transform:translateX(-50%);
+                     font-size:9px; color:var(--text-mid); text-align:center;
+                     white-space:nowrap; line-height:1.4; }
+  .lt-axis { position:relative; height:14px; margin-top:4px; }
+  .lt-axis span { position:absolute; font-size:9px; color:var(--text-dim);
+                  transform:translateX(-50%); }
+  .lt-triggers { margin-top:10px; }
+  .lt-trigger-item { font-size:11px; color:var(--text-mid); padding:3px 0 3px 12px;
+                     border-left:2px solid var(--amber); margin:4px 0; line-height:1.5; }
+  .lockup-assess { margin-top:14px; padding:12px 14px; border-radius:5px; }
+  .lockup-assess-header { font-size:10px; font-weight:700; letter-spacing:.08em;
+                          text-transform:uppercase; margin-bottom:6px; }
+  .lockup-assess-body { font-size:12px; color:var(--text-mid); line-height:1.75;
+                        font-family:'Libre Baskerville',serif; margin:0; }
   .bool-row { display:flex; align-items:center; gap:10px; padding:5px 0; font-size:12px; color:var(--text-mid); border-bottom:1px solid var(--border); }
   .bool-row:last-child { border-bottom:none; }
   .bool-icon-yes { color:var(--red);   font-size:14px; }
@@ -2624,28 +2644,169 @@ function buildSectionManagement(m) {
 }
 
 function buildSection10(m) {
-  const la = m.lockup_analysis || {};
-  if (!la.lockup_days && la.primary_shares_millions == null && la.secondary_shares_millions == null) return "";
-  const rf23 = la.rf23_triggered
-    ? `<div class="rf-banner rf-banner-red">&#x2691; RF-23 INSIDER LIQUIDITY OVERHANG &mdash; ${la.rf23_reason || "Secondary shares exceed 20% of offering."}</div>`
+  // ── Backward-compat: map lockup_insider_selling{} → lockup_analysis{} ──────
+  const lis = m.lockup_insider_selling || {};
+  let la = m.lockup_analysis || null;
+  if (!la) {
+    if (!lis.company_lockup_days && lis.secondary_shares == null && !lis.early_release_provisions) return "";
+    const earlyTriggers = lis.early_release_provisions ? [lis.early_release_provisions] : [];
+    const founderDays   = lis.founder_lockup_days || null;
+    const companyDays   = lis.company_lockup_days || null;
+    la = {
+      lockup_days:               companyDays,
+      _founder_lockup_days:      founderDays,
+      lockup_shares_count:       null,
+      lockup_pct_of_outstanding: null,
+      lockup_structure_type:     (founderDays && companyDays && founderDays !== companyDays) ? "hybrid" : "cliff",
+      lockup_release_schedule:   [],
+      early_release_triggers:    earlyTriggers,
+      parties_locked_up:         lis.other_investor_lockup ? [lis.other_investor_lockup] : [],
+      lockup_carveouts:          [],
+      lockup_investor_assessment: lis.insider_selling_note || "",
+      primary_shares_millions:   null,
+      secondary_shares_millions: lis.secondary_shares != null ? lis.secondary_shares : null,
+      secondary_shares_pct_offering: null,
+      rf23_triggered:            lis.insider_selling_flag || false,
+      rf23_reason:               lis.insider_selling_note || "",
+    };
+  }
+
+  // Guard: need at least one meaningful lockup field
+  const hasData = la.lockup_days != null
+    || la.lockup_pct_of_outstanding != null
+    || la.lockup_investor_assessment
+    || (la.early_release_triggers && la.early_release_triggers.length > 0)
+    || la.secondary_shares_millions != null;
+  if (!hasData) return "";
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const toArr = v => Array.isArray(v) ? v : (v && typeof v === "string" ? [v] : []);
+  const carveoutsList  = toArr(la.lockup_carveouts);
+  const partyList      = toArr(la.parties_locked_up);
+  const earlyTriggers  = toArr(la.early_release_triggers);
+  const releaseSchedule = Array.isArray(la.lockup_release_schedule) ? la.lockup_release_schedule : [];
+  const structType = (la.lockup_structure_type || "cliff").toLowerCase();
+
+  // ── Summary table ─────────────────────────────────────────────────────────
+  const structBadge = (() => {
+    if (structType === "cliff")            return `<span style="color:var(--green);font-weight:600">Cliff</span>`;
+    if (structType === "rolling")          return `<span style="color:var(--accent);font-weight:600">Rolling</span>`;
+    if (structType === "performance_based")return `<span style="color:var(--amber);font-weight:600">Performance-Based</span>`;
+    if (structType === "hybrid")           return `<span style="color:var(--amber);font-weight:600">Hybrid</span>`;
+    return la.lockup_structure_type || "\u2014";
+  })();
+
+  const tableRows = [];
+  if (la.lockup_days != null)    tableRows.push(["Lockup Period", `${la.lockup_days} days`]);
+  // Founder lockup row when different (legacy compat or explicit field)
+  const founderDays = la._founder_lockup_days || null;
+  if (founderDays != null && founderDays !== la.lockup_days)
+    tableRows.push(["Founder Lockup", `${founderDays} days`]);
+  if (la.lockup_pct_of_outstanding != null)
+    tableRows.push(["% Shares Locked", `${la.lockup_pct_of_outstanding.toFixed(1)}%`]);
+  tableRows.push(["Structure Type",    structBadge]);
+  if (la.primary_shares_millions != null)
+    tableRows.push(["Primary Shares",  `${la.primary_shares_millions.toLocaleString()}M`]);
+  if (la.secondary_shares_millions != null)
+    tableRows.push(["Secondary Shares", `${la.secondary_shares_millions.toLocaleString()}M`]);
+  if (la.secondary_shares_pct_offering != null)
+    tableRows.push(["Secondary % of Offering", `${la.secondary_shares_pct_offering.toFixed(1)}%`]);
+  if (partyList.length > 0)
+    tableRows.push(["Parties Locked Up", partyList.join("; ")]);
+  tableRows.push(["Carve-outs", carveoutsList.length > 0 ? `Yes (${carveoutsList.length})` : "None"]);
+
+  const summaryTable = `<table class="fin-table">
+    <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
+    <tbody>${tableRows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
+  </table>`;
+
+  // Carve-out detail list
+  const carveoutsDetail = carveoutsList.length > 0
+    ? `<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,.03);border-radius:4px;border:1px solid var(--border2)">
+        <span style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase">Carve-out Exceptions</span>
+        <ul style="margin:6px 0 0;padding-left:16px">${carveoutsList.map(c => `<li style="font-size:11px;color:var(--text-mid);line-height:1.6">${c}</li>`).join("")}</ul>
+      </div>`
     : "";
-  const carveout = la.lockup_carveouts
-    ? `<p style="font-size:11px;color:var(--text-dim);margin-top:8px">Carve-outs: ${la.lockup_carveouts}</p>`
+
+  // ── Timeline visualization (CSS/HTML only, prints correctly) ─────────────
+  const showTimeline = structType === "rolling" || structType === "hybrid" ||
+    structType === "performance_based" || earlyTriggers.length > 0 || releaseSchedule.length > 0;
+
+  let timelineHtml = "";
+  if (showTimeline) {
+    const maxDay = Math.max(
+      la.lockup_days || 0,
+      ...releaseSchedule.map(r => r.release_date_days || 0),
+      180
+    );
+    const scale = Math.max(maxDay, 365);
+
+    // Build markers: from release_schedule, or single cliff marker
+    const markers = releaseSchedule.length > 0
+      ? releaseSchedule.filter(r => r.release_date_days)
+          .map(r => ({ day: r.release_date_days, pct: r.pct_released, note: r.notes || "" }))
+      : (la.lockup_days != null ? [{ day: la.lockup_days, pct: 100, note: "Full unlock" }] : []);
+
+    const markerHtml = markers.map(mk => {
+      const left = Math.min(98, (mk.day / scale) * 100).toFixed(1);
+      const pctLbl = mk.pct != null ? ` \u2014 ${parseFloat(mk.pct).toFixed(0)}%` : "";
+      const noteLbl = mk.note ? `<br><span style="color:var(--text-dim)">${mk.note}</span>` : "";
+      return `<div class="lt-marker" style="left:${left}%">
+        <div class="lt-marker-line"></div>
+        <div class="lt-marker-label">Day&nbsp;${mk.day}${pctLbl}${noteLbl}</div>
+      </div>`;
+    }).join("");
+
+    const axisSpans = [];
+    axisSpans.push(`<span style="left:0%">IPO</span>`);
+    if (scale >= 90)  axisSpans.push(`<span style="left:${(90/scale*100).toFixed(1)}%">90d</span>`);
+    if (scale >= 180) axisSpans.push(`<span style="left:${(180/scale*100).toFixed(1)}%">180d</span>`);
+    if (scale >= 365) axisSpans.push(`<span style="left:${(365/scale*100).toFixed(1)}%">1yr</span>`);
+
+    const earlyTriggersBlock = earlyTriggers.length > 0
+      ? `<div class="lt-triggers">
+          <span style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--amber);text-transform:uppercase">Early Release Triggers</span>
+          ${earlyTriggers.map(t => `<div class="lt-trigger-item">${t}</div>`).join("")}
+        </div>`
+      : "";
+
+    timelineHtml = `<div style="margin:16px 0 4px">
+      <p style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:10px">Unlock Timeline</p>
+      <div class="lt-wrap">
+        <div class="lt-track">${markerHtml}</div>
+        <div class="lt-axis">${axisSpans.join("")}</div>
+      </div>
+      ${earlyTriggersBlock}
+    </div>`;
+  }
+
+  // ── Lockup Investor Assessment ─────────────────────────────────────────────
+  let assessHtml = "";
+  if (la.lockup_investor_assessment) {
+    const txt = la.lockup_investor_assessment.toLowerCase();
+    const friendly   = txt.includes("investor-friendly") || txt.includes("investor friendly");
+    const unfriendly = txt.includes("investor-unfriendly") || txt.includes("investor unfriendly") || txt.includes("unfriendly");
+    const borderColor = friendly ? "var(--green)" : unfriendly ? "var(--amber)" : "rgba(255,255,255,.12)";
+    const labelColor  = friendly ? "var(--green)" : unfriendly ? "var(--amber)" : "var(--text-dim)";
+    const labelText   = friendly ? "Investor-Friendly" : unfriendly ? "Investor-Unfriendly" : "Standard";
+    assessHtml = `<div class="lockup-assess" style="background:rgba(255,255,255,.025);border:1px solid ${borderColor};border-left:3px solid ${borderColor}">
+      <div class="lockup-assess-header" style="color:${labelColor}">Lockup Assessment \u2014 ${labelText}</div>
+      <p class="lockup-assess-body">${la.lockup_investor_assessment}</p>
+    </div>`;
+  }
+
+  // ── RF-23 flags ────────────────────────────────────────────────────────────
+  const rf23Html = la.rf23_triggered
+    ? `<div class="rf-banner rf-banner-red" style="margin-top:10px">&#x2691; RF-23 INSIDER LIQUIDITY OVERHANG \u2014 ${la.rf23_reason || "Lockup condition triggers RF-23."}</div>`
     : "";
-  const rows = [
-    ["Lockup Period",             la.lockup_days != null ? `${la.lockup_days} days` : "&mdash;"],
-    ["Primary Shares",            la.primary_shares_millions != null ? `${la.primary_shares_millions}M` : "&mdash;"],
-    ["Secondary Shares",          la.secondary_shares_millions != null ? `${la.secondary_shares_millions}M` : "&mdash;"],
-    ["Secondary % of Offering",   la.secondary_shares_pct_offering != null ? `${la.secondary_shares_pct_offering.toFixed(1)}%` : "&mdash;"],
-  ];
+
   return `<div class="memo-section">
     <h3><span class="section-num">14</span> Lockup &amp; Insider Selling</h3>
-    ${rf23}
-    <table class="fin-table">
-      <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
-      <tbody>${rows.map(r => `<tr><td class="label-col">${r[0]}</td><td class="val-col">${r[1]}</td></tr>`).join("")}</tbody>
-    </table>
-    ${carveout}
+    ${rf23Html}
+    ${summaryTable}
+    ${carveoutsDetail}
+    ${timelineHtml}
+    ${assessHtml}
   </div>`;
 }
 
