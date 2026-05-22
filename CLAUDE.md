@@ -307,6 +307,89 @@ NO TRIGGER:          Standard 90-day-or-longer cliff/rolling lockups with routin
 RF-24: AUDITOR QUALITY RISK — Auditor is not Big 4 or recognized mid-tier on a deal with offering size >$50M.
 RF-25: ACCOUNTING QUALITY RISK — Overall Accounting Quality Score ≤5. Multiple aggressive accounting policy choices.
 
+## SECTOR-SPECIFIC VALUATION METRIC FRAMEWORK
+
+Integrated with existing Section 08 Valuation Analysis. Extends — does not replace — the
+6-criterion comp framework, RF-07 logic, Damodaran benchmarks, and live_comps_data enrichment.
+
+### How it works
+1. `enrich_valuation_metric_selection()` runs in `analyze_filing()` AFTER Opus returns JSON and
+   AFTER `enrich_with_damodaran()`, BEFORE `apply_scoring_adjustments()`
+2. It calls `select_valuation_metric(sic_code, gaap_profitable, business_model_description,
+   segment_count, lease_intensity_pct, capex_intensity_pct)` with inputs computed from the memo
+3. Results are injected into `valuation{}` via `setdefault` — Opus-set values preserved if present
+4. The 6-criterion comp framework still governs comp selection; methodology only changes which
+   metric is calculated on those comps
+
+### Selection Priority Order
+| Priority | Condition | sector_classification | primary_metric | secondary_metric |
+|---|---|---|---|---|
+| 1 | segment_count ≥ 2 | `multi_segment_sotp` | SOTP | EV/EBITDA |
+| 2 | SIC 6020/6021/6022 | `bank` | P/B | P/TBV |
+| 2 | SIC 6311/6321/6331 | `insurance` | P/B | P/E |
+| 2 | SIC 6411 | `insurance_broker` | EV/EBITDA | P/E |
+| 2 | SIC 6282 | `asset_manager` | P/E | EV/AUM |
+| 2 | SIC 6199/6141/6029 + loan portfolio language | `fintech_balance_sheet` | P/B | P/TBV |
+| 2 | SIC 6199/6141/6029 + fee-based platform | `fintech_services` | EV/Revenue | EV/Gross Profit |
+| 3 | SIC 1311/1381 | `oil_gas_e_and_p` | EV/EBITDAX | NAV (PV-10) |
+| 3 | lease_intensity_pct ≥ 15% | `lease_heavy` | EV/EBITDAR | EV/EBITDA |
+| 3 | capex_intensity_pct ≥ 20% | `capex_intensive` | EV/(EBITDA-Capex) | EV/EBITDA |
+| 3 | SIC 2834/2836 + no revenue + pipeline lang | `biotech_pre_revenue` | Risk-adj NPV | EV/Program |
+| 4 | GAAP-profitable | `standard_profitable` | EV/EBITDA | EV/EBIT |
+| 4 | GAAP-loss | `standard_unprofitable` | EV/Revenue | Forward EV/EBITDA |
+| 5 (additive) | SIC 7370-7389 + SaaS language | ← | + EV/Subscribers | |
+| 5 (additive) | SIC 7370-7389 + social/MAU language | ← | + EV/MAU | |
+| 5 (additive) | SIC 7370-7389 + marketplace/GMV language | ← | + EV/GMV | |
+
+### Fintech Sub-Router (critical)
+The `fintech_services` vs `fintech_balance_sheet` routing is business-model-driven, not SIC-driven.
+A fintech platform with no material loan book (e.g. Chime, payment processor, BaaS provider) uses
+`EV/Revenue` / `EV/Gross Profit` even when SIC is in the financial services range — these platforms
+trade on tech multiples. A chartered neobank or digital lender with a material loan portfolio uses
+`P/B` / `P/TBV` consistent with bank methodology. The router checks `business_model_description`
+for loan portfolio / balance sheet lending language.
+
+### RF-07 Sector-Aware Enforcement
+- `apply_valuation_rules()` runs RF-07 metric gating on ALL deals (priced and unpriced)
+- **RF-07A** (EV/Revenue >50% above sector median) — only fires if `primary_metric` or
+  `secondary_metric` contains "EV/Revenue"
+- **RF-07B** (EV/EBITDA >25x on loss / >35x any loss company) — only fires if `primary_metric`
+  or `secondary_metric` contains "EV/EBITDA"
+- **RF-07** (catch-all extreme valuation disconnect) — fires regardless of metric
+- Gating only applies when `primary_metric` is set; old memos without the field are unaffected
+- Price-pending suppression rule (suppress all RF-07* for unpriced deals) continues to apply
+
+Note: RF-07 threshold calibrations (50% above sector median, 25x/35x EV/EBITDA) currently assume
+EV/Revenue and EV/EBITDA. Future refinement may need sector-specific thresholds for P/B, EV/EBITDAX.
+
+### Damodaran Benchmark Routing
+`enrich_with_damodaran()` sets `damodaran_comps.primary_benchmark_metric` and `primary_benchmark_value`
+based on `sector_classification`:
+- `bank` / `fintech_balance_sheet` / `insurance` → P/B from Damodaran pbvdata.html
+- `asset_manager` → P/E from Damodaran pedata.html
+- `lease_heavy` → EV/EBITDA shown as proxy (Damodaran has no EV/EBITDAR table)
+- `multi_segment_sotp` → No single benchmark; segment-specific
+- All others → EV/EBITDA (default; existing behavior unchanged)
+EV/EBITDA and EV/Revenue are always fetched as reference rows regardless of sector_classification.
+
+### New JSON Fields (valuation{} block)
+| Field | Type | Backward-compat default |
+|---|---|---|
+| `primary_metric` | string | `"EV/EBITDA"` (schema default) |
+| `secondary_metric` | string | `"EV/Revenue"` (schema default) |
+| `methodology_rationale` | string | `""` (empty = box hidden in renderer) |
+| `sector_classification` | string | `"standard_profitable"` (schema default) |
+| `sector_specific_metrics` | object | `{}` |
+
+### Renderer Backward Compatibility
+Section 08 renderer reads `val.primary_metric` and `val.secondary_metric` with fallback:
+- `val.primary_metric || "EV/Revenue"` — defaults to EV/Revenue for old memos
+- `val.secondary_metric || "EV/EBITDA"` — defaults to EV/EBITDA for old memos
+- Methodology rationale box is hidden when `methodology_rationale` is empty/absent
+- Comp table column headers and cell data adapt to selected metrics; old memos render unchanged
+- REITs, BDCs, ETFs, closed-end funds remain blocked by the eligibility gate before any of
+  this framework runs
+
 ## DAMODARAN INTEGRATION
 - Source: NYU Stern Damodaran January 2026 data
 - SIC code fetched from EDGAR Submissions API for each company

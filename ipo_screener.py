@@ -573,6 +573,23 @@ Analyze the following from the filing text provided:
       most appropriate methodology (EV/Revenue, EV/EBITDA, or DCF where guidance exists)
       and compute an implied segment value. Populate `sotp_valuation` with the result.
       If only one segment or insufficient data, leave sotp_valuation.segments empty.
+    - SECTOR-SPECIFIC METRIC SELECTION: After Python populates `valuation.primary_metric`
+      and `valuation.secondary_metric`, read those fields and apply them throughout your
+      valuation analysis:
+        • Use primary_metric as the lead comparison metric in the comp table and narrative
+        • Use secondary_metric as the supporting metric
+        • For each public comp, populate the metric values that correspond to the selected
+          methodology (e.g., p_b_ratio for banks, ev_ebitdax for O&G E&P)
+        • Populate `methodology_rationale` with a 2-3 sentence explanation of why these
+          metrics are appropriate for this specific company's business model and sector
+        • The 6-criterion comp selection framework still governs comp selection — methodology
+          choice only changes which metric is calculated; comp quality standards are unchanged
+        • For SOTP (multi_segment_sotp), each segment uses its own natural metric; the
+          consolidated SOTP total is the primary output
+        • For banks and insurance (P/B methodology), the EV/Revenue and EV/EBITDA fields
+          in public_comps may be null — populate p_b_ratio and p_tbv_ratio fields instead
+        • For O&G E&P (EV/EBITDAX / NAV), populate sector_specific_metrics with
+          ev_ebitdax and any available PV-10 NAV data
 
 
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
@@ -1069,6 +1086,11 @@ Use this exact schema:
       }
     ],
     "valuation_flag": false,
+    "primary_metric": "EV/EBITDA",
+    "secondary_metric": "EV/Revenue",
+    "methodology_rationale": "",
+    "sector_classification": "standard_profitable",
+    "sector_specific_metrics": {},
     "sotp_valuation": {
       "segments": [
         {
@@ -2406,6 +2428,7 @@ Set filing_url to: {edgar_url}
             memo = cross_reference_flags(memo, diligence_items)
         memo = enrich_valuation_with_live_comps(memo)
         memo = enrich_with_damodaran(memo)
+        memo = enrich_valuation_metric_selection(memo)
         memo = apply_scoring_adjustments(memo)
         return memo
 
@@ -3051,7 +3074,24 @@ def _load_damodaran_cache() -> dict:
     except Exception as e:
         log.warning(f"Damodaran fetch failed: {e}")
 
-    _damodaran_cache = {"ev_ebitda": ev_ebitda, "ev_sales": ev_sales}
+    p_b: dict[str, float] = {}
+    p_e: dict[str, float] = {}
+    try:
+        time.sleep(0.5)
+        p_b = _fetch_damodaran_table(
+            "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pbvdata.html",
+            "pbv",
+        )
+        time.sleep(0.5)
+        p_e = _fetch_damodaran_table(
+            "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pedata.html",
+            "current pe",
+        )
+        log.info(f"Damodaran: loaded {len(p_b)} P/B rows, {len(p_e)} P/E rows")
+    except Exception as e:
+        log.warning(f"Damodaran P/B and P/E fetch failed: {e}")
+
+    _damodaran_cache = {"ev_ebitda": ev_ebitda, "ev_sales": ev_sales, "p_b": p_b, "p_e": p_e}
     return _damodaran_cache
 
 
@@ -3096,23 +3136,51 @@ def enrich_with_damodaran(memo: dict) -> dict:
         return memo
 
     try:
-        cache    = _load_damodaran_cache()
+        cache     = _load_damodaran_cache()
         ev_ebitda = cache["ev_ebitda"].get(industry)
         ev_sales  = cache["ev_sales"].get(industry)
+        p_b_val   = cache.get("p_b", {}).get(industry)
+        p_e_val   = cache.get("p_e", {}).get(industry)
+
+        val            = memo.get("valuation") or {}
+        sector_class   = (val.get("sector_classification") or "").lower()
+
+        # Select primary benchmark metric based on sector classification
+        if sector_class in ("bank", "fintech_balance_sheet", "insurance"):
+            primary_bm   = "P/B"
+            primary_bv   = p_b_val
+        elif sector_class == "asset_manager":
+            primary_bm   = "P/E"
+            primary_bv   = p_e_val
+        elif sector_class in ("lease_heavy",):
+            # Damodaran does not publish EV/EBITDAR; show EV/EBITDA as proxy
+            primary_bm   = "EV/EBITDAR (EV/EBITDA shown as Damodaran proxy)"
+            primary_bv   = ev_ebitda
+        elif sector_class == "multi_segment_sotp":
+            primary_bm   = "Multiple (SOTP — segment-specific)"
+            primary_bv   = None
+        else:
+            primary_bm   = "EV/EBITDA"
+            primary_bv   = ev_ebitda
 
         memo["damodaran_comps"] = {
-            "matched_industry":       industry,
-            "ev_ebitda_sector_median": ev_ebitda,
-            "ev_revenue_sector_median": ev_sales,
+            "matched_industry":           industry,
+            "ev_ebitda_sector_median":    ev_ebitda,
+            "ev_revenue_sector_median":   ev_sales,
+            "p_b_sector_median":          p_b_val,
+            "p_e_sector_median":          p_e_val,
+            "primary_benchmark_metric":   primary_bm,
+            "primary_benchmark_value":    primary_bv,
             "source":      "Damodaran NYU Stern (January 2026)",
             "source_urls": [
                 "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/vebitda.html",
                 "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/psdata.html",
+                "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pbvdata.html",
+                "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pedata.html",
             ],
         }
 
         # Back-fill valuation.sector_median_ev_revenue if yfinance didn't set it
-        val = memo.get("valuation") or {}
         if ev_sales and not val.get("sector_median_ev_revenue"):
             val["sector_median_ev_revenue"] = ev_sales
             val["sector_median_source"]     = "damodaran"
@@ -3127,7 +3195,8 @@ def enrich_with_damodaran(memo: dict) -> dict:
 
         log.info(
             f"Damodaran: matched '{industry}' — "
-            f"EV/EBITDA={ev_ebitda}x, EV/Revenue={ev_sales}x"
+            f"EV/EBITDA={ev_ebitda}x, EV/Revenue={ev_sales}x, "
+            f"primary_benchmark={primary_bm} ({primary_bv})"
         )
     except Exception as e:
         log.warning(f"Damodaran enrichment failed: {e}")
@@ -3402,19 +3471,333 @@ def apply_leverage_floor(memo: dict) -> dict:
     return memo
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTOR-SPECIFIC VALUATION METRIC SELECTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def select_valuation_metric(
+    sic_code: str,
+    gaap_profitable: bool,
+    business_model_description: str,
+    segment_count: int,
+    lease_intensity_pct,
+    capex_intensity_pct,
+) -> dict:
+    """
+    Select the primary and secondary valuation metric combination for a company
+    based on its SIC code, profitability, business model, and capital intensity.
+
+    Returns a dict with keys:
+        primary_metric, secondary_metric, methodology_rationale, sector_classification
+
+    Priority order:
+      Step 1 — SOTP override: segment_count >= 2 always wins
+      Step 2 — Financial services sub-router (banks, insurance, fintech)
+      Step 3 — Non-financial sector overrides (O&G E&P, lease-heavy, capex-intensive, biotech)
+      Step 4 — Default profitability-based (EV/EBITDA for profitable, EV/Revenue for loss)
+      Step 5 — Tech secondary metric appendage (SaaS subscribers, MAU, GMV)
+    """
+    sic  = str(sic_code).strip()
+    bmd  = (business_model_description or "").lower()
+
+    # ── Step 1: SOTP override for materially distinct multi-segment companies ──
+    if segment_count >= 2:
+        return {
+            "primary_metric":       "SOTP",
+            "secondary_metric":     "EV/EBITDA",
+            "methodology_rationale": (
+                "Multi-segment company with distinct operating divisions; "
+                "Sum-of-the-Parts is the primary methodology to avoid conglomerate "
+                "discount distortion. Each segment is benchmarked on its own natural "
+                "metric; consolidated EV/EBITDA is shown as a secondary cross-check."
+            ),
+            "sector_classification": "multi_segment_sotp",
+        }
+
+    # ── Step 2: Financial services sub-router ────────────────────────────────
+    if sic in ("6020", "6021", "6022"):
+        return {
+            "primary_metric":       "P/B",
+            "secondary_metric":     "P/TBV",
+            "methodology_rationale": (
+                "Commercial bank; P/Book and P/Tangible Book Value are the institutional "
+                "standard, anchored to capital adequacy (CET1) and ROE/ROTCE delivery. "
+                "EV/EBITDA is not meaningful for banks."
+            ),
+            "sector_classification": "bank",
+        }
+
+    if sic in ("6311", "6321", "6331"):
+        return {
+            "primary_metric":       "P/B",
+            "secondary_metric":     "P/E",
+            "methodology_rationale": (
+                "Insurance underwriter; P/Book reflects reserve adequacy and capital "
+                "strength. P&C lines pair P/B with combined ratio; life lines use "
+                "embedded value methodology as secondary cross-check."
+            ),
+            "sector_classification": "insurance",
+        }
+
+    if sic in ("6411",):
+        return {
+            "primary_metric":       "EV/EBITDA",
+            "secondary_metric":     "P/E",
+            "methodology_rationale": (
+                "Insurance broker with fee-based recurring commissions; EV/EBITDA "
+                "is standard for asset-light distribution businesses with stable "
+                "margin profiles, aligning with public broker comps."
+            ),
+            "sector_classification": "insurance_broker",
+        }
+
+    if sic in ("6282",):
+        return {
+            "primary_metric":       "P/E",
+            "secondary_metric":     "EV/AUM",
+            "methodology_rationale": (
+                "Asset manager; P/E captures fee-based earnings yield on a multiple "
+                "that normalizes across strategies, while EV/AUM benchmarks peers on "
+                "total assets managed."
+            ),
+            "sector_classification": "asset_manager",
+        }
+
+    # Fintech sub-router — critical: Chime-style platforms use EV/Revenue even
+    # though SIC may land in financial services range
+    if sic in ("6199", "6141", "6029"):
+        balance_sheet_terms = (
+            "deposit", "chartered bank", "lending on balance sheet",
+            "loan portfolio", "interest income from loans"
+        )
+        if any(t in bmd for t in balance_sheet_terms):
+            return {
+                "primary_metric":       "P/B",
+                "secondary_metric":     "P/TBV",
+                "methodology_rationale": (
+                    "Chartered neobank or digital lender with a material loan book; "
+                    "P/Book and P/Tangible Book reflect credit portfolio risk, consistent "
+                    "with bank-sector comparable methodology. Note: a fintech platform "
+                    "without a material loan book (e.g. Chime) uses EV/Revenue instead."
+                ),
+                "sector_classification": "fintech_balance_sheet",
+            }
+        else:
+            return {
+                "primary_metric":       "EV/Revenue",
+                "secondary_metric":     "EV/Gross Profit",
+                "methodology_rationale": (
+                    "Fee-based fintech platform with no material loan book; EV/Revenue "
+                    "and EV/Gross Profit are standard for software-like financial services "
+                    "companies. Despite SIC classification in the financial services range, "
+                    "these platforms trade on tech multiples, not book-value multiples."
+                ),
+                "sector_classification": "fintech_services",
+            }
+
+    # ── Step 3: Non-financial sector overrides ────────────────────────────────
+    if sic in ("1311", "1381"):
+        return {
+            "primary_metric":       "EV/EBITDAX",
+            "secondary_metric":     "NAV (PV-10)",
+            "methodology_rationale": (
+                "Oil & gas E&P; EV/EBITDAX normalizes across varying exploration expense "
+                "levels. Reserve-based NAV using PV-10 (10% discount rate) is the "
+                "institutional secondary for production and reserves valuation."
+            ),
+            "sector_classification": "oil_gas_e_and_p",
+        }
+
+    if lease_intensity_pct is not None and lease_intensity_pct >= 15:
+        return {
+            "primary_metric":       "EV/EBITDAR",
+            "secondary_metric":     "EV/EBITDA",
+            "methodology_rationale": (
+                f"Lease-intensive business ({lease_intensity_pct:.1f}% rent/revenue); "
+                "EV/EBITDAR adds rent back to normalize across own-vs.-lease real estate "
+                "strategies, standard for hospitality, restaurants, airlines, and "
+                "transportation operators."
+            ),
+            "sector_classification": "lease_heavy",
+        }
+
+    if capex_intensity_pct is not None and capex_intensity_pct >= 20:
+        return {
+            "primary_metric":       "EV/(EBITDA-Capex)",
+            "secondary_metric":     "EV/EBITDA",
+            "methodology_rationale": (
+                f"Capex-intensive business ({capex_intensity_pct:.1f}% capex/revenue); "
+                "EV/(EBITDA-Capex) reflects true free cash flow generation capacity and "
+                "maintenance capex burden, more informative than headline EBITDA multiples "
+                "for heavy infrastructure and industrial operators."
+            ),
+            "sector_classification": "capex_intensive",
+        }
+
+    if sic in ("2834", "2836") and not gaap_profitable:
+        if any(t in bmd for t in ("pre-revenue", "clinical stage", "pipeline", "phase")):
+            return {
+                "primary_metric":       "Risk-adjusted NPV",
+                "secondary_metric":     "EV/Program",
+                "methodology_rationale": (
+                    "Pre-revenue biotechnology company; risk-adjusted NPV of clinical "
+                    "pipeline is the institutional standard, discounting probability of "
+                    "approval and peak sales. EV per program is the secondary "
+                    "cross-check across stage and modality."
+                ),
+                "sector_classification": "biotech_pre_revenue",
+            }
+
+    # ── Step 4: Default profitability-based selection ─────────────────────────
+    if gaap_profitable:
+        base = {
+            "primary_metric":       "EV/EBITDA",
+            "secondary_metric":     "EV/EBIT",
+            "methodology_rationale": (
+                "GAAP-profitable company; EV/EBITDA is the primary metric for comparison "
+                "across capital structure differences, with EV/EBIT as secondary to "
+                "capture the D&A burden on capital-intensive businesses."
+            ),
+            "sector_classification": "standard_profitable",
+        }
+    else:
+        base = {
+            "primary_metric":       "EV/Revenue",
+            "secondary_metric":     "Forward EV/EBITDA",
+            "methodology_rationale": (
+                "GAAP-loss company; EV/Revenue is the primary metric as EBITDA is "
+                "negative or not meaningful. Forward EV/EBITDA is the secondary metric "
+                "where a visible path to profitability within 24 months is indicated."
+            ),
+            "sector_classification": "standard_unprofitable",
+        }
+
+    # ── Step 5: Tech secondary metric appendage (additive) ────────────────────
+    sic_int = int(sic) if sic.isdigit() else 0
+    if 7370 <= sic_int <= 7389:
+        saas_terms       = ("subscription", "saas", "streaming", "subscriber")
+        social_terms     = ("social", "monthly active", "mau", "consumer app", "dau")
+        marketplace_terms= ("marketplace", "gmv", "gross merchandise")
+        if any(t in bmd for t in saas_terms):
+            base["secondary_metric"] = base["secondary_metric"] + ", EV/Subscribers"
+        elif any(t in bmd for t in social_terms):
+            base["secondary_metric"] = base["secondary_metric"] + ", EV/MAU"
+        elif any(t in bmd for t in marketplace_terms):
+            base["secondary_metric"] = base["secondary_metric"] + ", EV/GMV"
+
+    return base
+
+
+def enrich_valuation_metric_selection(memo: dict) -> dict:
+    """
+    Extract inputs from memo and call select_valuation_metric().
+    Injects primary_metric, secondary_metric, methodology_rationale,
+    sector_classification, and sector_specific_metrics into valuation{}.
+
+    Uses setdefault so Opus-populated values are preserved if already set.
+    """
+    fin = memo.get("financials") or {}
+    sic = str(memo.get("sic_code") or "").strip()
+    biz = (memo.get("business_overview") or {}).get("business_model") or ""
+
+    net_income    = fin.get("net_income_usd_millions")
+    gaap_profitable = net_income is not None and net_income >= 0
+
+    # Count distinct segments — support both schema versions
+    segments      = fin.get("segments") or fin.get("segment_breakdown") or []
+    segment_count = len(segments)
+
+    # Resolve TTM revenue for intensity calculations
+    rev = fin.get("revenue_ttm_usd_millions")
+    if rev is None:
+        rev_obj = fin.get("revenue_usd_millions")
+        if isinstance(rev_obj, dict):
+            rev = rev_obj.get("ttm") or rev_obj.get("year_minus_1")
+        elif isinstance(rev_obj, (int, float)):
+            rev = rev_obj
+
+    # Lease intensity
+    rent  = fin.get("rent_expense_usd_millions")
+    lease_intensity = (rent / rev * 100) if rent and rev else None
+
+    # Capex intensity
+    capex = fin.get("capex_usd_millions")
+    capex_intensity = (capex / rev * 100) if capex and rev else None
+
+    result = select_valuation_metric(
+        sic, gaap_profitable, biz, segment_count,
+        lease_intensity, capex_intensity
+    )
+
+    val = memo.setdefault("valuation", {})
+    val.setdefault("primary_metric",        result["primary_metric"])
+    val.setdefault("secondary_metric",      result["secondary_metric"])
+    val.setdefault("methodology_rationale", result["methodology_rationale"])
+    val.setdefault("sector_classification", result["sector_classification"])
+    val.setdefault("sector_specific_metrics", {})
+
+    log.info(
+        f"Metric selection: primary={result['primary_metric']}, "
+        f"secondary={result['secondary_metric']}, "
+        f"class={result['sector_classification']}"
+    )
+    return memo
+
+
+
 def apply_valuation_rules(memo: dict) -> dict:
     """
-    Suppress valuation flags for unpriced deals.
+    1. Sector-aware RF-07 metric gating (all deals):
+       RF-07A only fires when EV/Revenue is the primary or secondary metric.
+       RF-07B only fires when EV/EBITDA is the primary or secondary metric.
+       RF-07 (catch-all) fires regardless of metric.
 
-    When proposed_price_range is null, empty, or 'TBD', RF-07/07A/07B are not
-    applicable — no offering price has been set so valuation cannot be assessed.
-    Sets VA to neutral 6.0, removes any RF-07* flags Opus may have added, and
-    sets pricing_tbd_flag=True for the app's cover-page alerts strip.
+    2. Suppress valuation flags for unpriced deals:
+       When proposed_price_range is null/empty/TBD, RF-07/07A/07B are not
+       applicable — no offering price has been set. Sets VA to neutral 6.0,
+       removes any RF-07* flags, and sets pricing_tbd_flag=True.
     """
+    # ── Sector-aware metric gating (runs for all deals) ──────────────────────
+    val        = memo.get("valuation") or {}
+    primary_m  = (val.get("primary_metric")   or "").upper()
+    secondary_m= (val.get("secondary_metric") or "").upper()
+
+    # Only gate if metric selection was run (primary_metric is non-empty)
+    if primary_m:
+        ev_rev_selected   = "EV/REVENUE"  in primary_m  or "EV/REVENUE"  in secondary_m
+        ev_ebitda_selected= "EV/EBITDA"   in primary_m  or "EV/EBITDA"   in secondary_m
+
+        rf_flags   = memo.get("red_flags") or []
+        kept       = []
+        rm_metric  = []
+        for flag in rf_flags:
+            fid = (flag.get("flag_id") or flag.get("code") or "").upper().replace("-", "")
+            if fid == "RF07A" and not ev_rev_selected:
+                rm_metric.append(fid)
+            elif fid == "RF07B" and not ev_ebitda_selected:
+                rm_metric.append(fid)
+            else:
+                kept.append(flag)
+        if rm_metric:
+            memo["red_flags"]      = kept
+            memo["red_flag_count"] = len(kept)
+            adj = list((memo.setdefault("scores", {})).get("adjustments") or [])
+            adj.append({
+                "rule":    "RF-07 sector metric gating",
+                "detail":  (
+                    f"Removed {', '.join(rm_metric)} — metric not applicable to "
+                    f"selected methodology (primary: {primary_m})"
+                ),
+                "penalty": 0,
+            })
+            memo["scores"]["adjustments"] = adj
+            log.info(f"RF-07 metric gating: removed {rm_metric} (primary={primary_m})")
+
+    # ── Unpriced deal suppression ─────────────────────────────────────────────
     price_range = (memo.get("proposed_price_range") or "").strip().upper()
-    unpriced_values = {"", "TBD", "N/A", "—", "-", "PENDING", "TO BE DETERMINED"}
+    unpriced_values = {"", "TBD", "N/A", "\u2014", "-", "PENDING", "TO BE DETERMINED"}
     if price_range and price_range not in unpriced_values:
-        return memo  # priced deal — no action needed
+        return memo  # priced deal — metric gating already applied above
 
     scores   = memo.get("scores") or {}
     old_va   = scores.get("valuation_attractiveness")
@@ -3666,7 +4049,8 @@ def apply_scoring_adjustments(memo: dict) -> dict:
     Apply post-hoc score penalties and structural overrides after Opus scoring.
 
     Steps (in order):
-      1. apply_valuation_rules       — suppress RF-07/07A/07B + set VA=6.0 for unpriced deals
+      0. enrich_valuation_metric_selection — select primary/secondary metric (runs before this fn)
+      1. apply_valuation_rules       — sector-aware RF-07 gating + suppress all for unpriced deals
       2. apply_leverage_adjustments  — reweight FHR/VA for leveraged issuers
       3. apply_leverage_floor        — detect high leverage, note in adjustments (no cap)
       4. apply_governance_cap        — founder track record deduction for dual-class

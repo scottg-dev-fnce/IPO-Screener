@@ -1779,6 +1779,31 @@ function renderMemo(m) {
 
   // Valuation section — live comps + Damodaran benchmarks
   const liveCompsData = val.live_comps_data || [];
+
+  // ── Sector-specific valuation metric selection ──────────────────────────────
+  const _primaryMetric   = val.primary_metric   || "EV/Revenue";
+  const _secondaryMetric = val.secondary_metric || "EV/EBITDA";
+  const _methRationale   = val.methodology_rationale || "";
+  const _sectorClass     = val.sector_classification || "";
+  const _isSOTP          = _sectorClass === "multi_segment_sotp" || _primaryMetric === "SOTP";
+  const _isPBook         = _primaryMetric === "P/B" || _primaryMetric === "P/TBV";
+
+  // Methodology rationale box — shown at top of Section 08 when populated
+  const _methBox = _methRationale ? `
+    <div style="margin-bottom:14px;padding:10px 14px;background:rgba(155,142,234,.06);
+                border:1px solid rgba(155,142,234,.2);border-left:3px solid rgba(155,142,234,.5);
+                border-radius:4px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+                  color:rgba(155,142,234,.8);margin-bottom:4px">Valuation Methodology</div>
+      <div style="font-size:11px;color:var(--text-mid);line-height:1.6">
+        <span style="font-weight:600;color:var(--text)">${_primaryMetric}</span>
+        <span style="color:var(--text-dim)"> (primary)</span>
+        <span style="margin:0 6px;color:var(--text-dim)">·</span>
+        <span style="font-weight:600;color:var(--text)">${_secondaryMetric}</span>
+        <span style="color:var(--text-dim)"> (secondary)</span>
+        ${_methRationale ? `<span style="color:var(--text-dim)"> — </span>${_methRationale}` : ""}
+      </div>
+    </div>` : "";
   const dam = m.damodaran_comps || {};
   const liveFlag = m.live_comps_enriched ? `<span class="live-badge">LIVE</span>` : "";
   const damFlag  = dam.matched_industry   ? `<span class="live-badge" style="background:#6a5acd20;color:#9b8eea;border-color:#9b8eea40;margin-left:4px">DAM</span>` : "";
@@ -1828,7 +1853,7 @@ function renderMemo(m) {
       : "";
     return `<div style="margin:18px 0 28px;padding:0 2px">
       <div style="font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">
-        EV/Revenue Positioning — Subject vs. Comp Set
+        ${_primaryMetric} Positioning — Subject vs. Comp Set
       </div>
       <div style="position:relative;height:8px;background:var(--surface2);border-radius:4px;border:1px solid var(--border)">
         ${compTicks}
@@ -1838,7 +1863,7 @@ function renderMemo(m) {
                     border:2px solid var(--bg);box-shadow:0 0 6px ${subColor}40;z-index:2"></div>
       </div>
       <div style="display:flex;gap:16px;margin-top:22px;font-size:10px;color:var(--text-dim)">
-        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${subColor};margin-right:4px;vertical-align:middle"></span>Subject (${_subjectEvRev.toFixed(1)}x)</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${subColor};margin-right:4px;vertical-align:middle"></span>Subject (${_subjectEvRev.toFixed(1)}x ${_primaryMetric})</span>
         <span><span style="display:inline-block;width:8px;height:2px;background:var(--gold);margin-right:4px;vertical-align:middle"></span>Comp Median</span>
         <span><span style="display:inline-block;width:8px;height:8px;background:var(--border2);margin-right:4px;vertical-align:middle"></span>Comp</span>
       </div>
@@ -1853,9 +1878,9 @@ function renderMemo(m) {
         <table class="fin-table">
           <thead><tr>
             <th>Ticker</th><th>Name</th>
-            <th style="text-align:right">EV/Rev</th>
+            <th style="text-align:right">${_isPBook ? "P/B" : _primaryMetric.replace("EV/Revenue","EV/Rev").replace("EV/(EBITDA-Capex)","EV/EBITDA-Cx")}</th>
             <th style="text-align:right">vs. Subject</th>
-            <th style="text-align:right">EV/EBITDA</th>
+            <th style="text-align:right">${_isPBook ? "P/TBV" : _secondaryMetric.split(",")[0].trim().replace("EV/Revenue","EV/Rev").replace("Forward EV/EBITDA","Fwd EV/EBITDA")}</th>
             <th style="text-align:right">Rev Growth</th>
           </tr></thead>
           <tbody>${_allCompsData.map(c => {
@@ -1863,13 +1888,24 @@ function renderMemo(m) {
             const _name     = c.name || c.company || "—";
             const _evRev    = c.ev_revenue_multiple ?? c.ev_revenue ?? null;
             const _evEbitda = c.ev_ebitda_multiple  ?? c.ev_ebitda  ?? null;
+            // Metric-adaptive: use primary metric value for first data column
+            const _primVal  = _isPBook ? (c.p_b_ratio ?? null)
+                            : _primaryMetric.startsWith("EV/EBITDAX") ? (c.ev_ebitdax ?? null)
+                            : _primaryMetric === "EV/EBITDAR" ? (c.ev_ebitdar ?? null)
+                            : _primaryMetric.startsWith("EV/(EBITDA") ? (c.ev_ebitda_minus_capex ?? null)
+                            : _evRev;
+            const _secVal   = _isPBook ? (c.p_tbv_ratio ?? null)
+                            : _secondaryMetric.split(",")[0].trim().includes("EBITDA") ? _evEbitda
+                            : _evRev;
             const _revGrow  = c.revenue_growth_pct ?? null;
             const _notes    = c.notes ? `<br><span style="font-size:10px;color:var(--text-dim)">${c.notes}</span>` : "";
             // Premium/discount indicator: green = subject at discount to this comp, red = premium
             let _pdCell = `<td class="val-col" style="color:var(--text-dim)">—</td>`;
-            if (_evRev != null && _subjectEvRev != null) {
-              const _diff = _subjectEvRev - _evRev;
-              const _pct  = (_diff / _evRev * 100).toFixed(0);
+            // Use _primVal for vs. Subject calculation; fall back to _evRev for legacy memos
+            const _pdCompVal = _primVal ?? _evRev;
+            if (_pdCompVal != null && _subjectEvRev != null) {
+              const _diff = _subjectEvRev - _pdCompVal;
+              const _pct  = (_diff / _pdCompVal * 100).toFixed(0);
               const _isDiscount = _diff < 0;
               const _color = _isDiscount ? "var(--green)" : "var(--red)";
               const _label = _isDiscount ? `▼ ${Math.abs(_pct)}% disc` : `▲ ${_pct}% prem`;
@@ -1878,9 +1914,9 @@ function renderMemo(m) {
             return `<tr>
               <td class="label-col" style="color:var(--accent);font-weight:500">${_ticker}</td>
               <td class="label-col">${_name}${_notes}</td>
-              <td class="val-col">${_evRev    != null ? _evRev.toFixed(1)+"x"    : "—"}</td>
+              <td class="val-col">${_primVal != null ? _primVal.toFixed(1)+"x" : "—"}</td>
               ${_pdCell}
-              <td class="val-col">${_evEbitda != null ? _evEbitda.toFixed(1)+"x" : "—"}</td>
+              <td class="val-col">${_secVal  != null ? _secVal.toFixed(1)+"x"  : "—"}</td>
               <td class="val-col">${_revGrow  != null ? _revGrow.toFixed(0)+"%"  : "—"}</td>
             </tr>`;
           }).join("")}
@@ -1892,21 +1928,35 @@ function renderMemo(m) {
         <tr><td colspan="2" style="padding-top:12px;color:var(--text-dim);font-size:10px;letter-spacing:.06em;text-transform:uppercase">Damodaran Sector Benchmarks — ${dam.matched_industry}</td></tr>
         <tr><td>EV/EBITDA (Damodaran)</td><td class="val-col">${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>
         <tr><td>EV/Revenue (Damodaran)</td><td class="val-col">${dam.ev_revenue_sector_median != null ? dam.ev_revenue_sector_median.toFixed(1)+"x" : "—"}</td></tr>` : "";
-  const damBench = dam.matched_industry ? `
+  const damBench = dam.matched_industry ? (() => {
+    // Primary benchmark row adapts to sector classification
+    const _damPrimMetric = dam.primary_benchmark_metric || "EV/EBITDA";
+    const _damPrimVal    = dam.primary_benchmark_value;
+    const _damPrimRow    = _damPrimVal != null
+      ? `<tr><td>${_damPrimMetric} (sector median)</td><td>${_damPrimVal.toFixed(1)}x</td></tr>`
+      : `<tr><td>${_damPrimMetric} (sector median)</td><td style="color:var(--text-dim)">—</td></tr>`;
+    // Always show EV/EBITDA and EV/Revenue as reference rows
+    const _damRefRows = `
+      <tr><td style="color:var(--text-dim);font-size:10px">EV/EBITDA (ref)</td><td style="color:var(--text-dim)">${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>
+      <tr><td style="color:var(--text-dim);font-size:10px">EV/Revenue (ref)</td><td style="color:var(--text-dim)">${dam.ev_revenue_sector_median != null ? dam.ev_revenue_sector_median.toFixed(1)+"x" : "—"}</td></tr>`;
+    const _showRefRows = (_damPrimMetric !== "EV/EBITDA" && _damPrimMetric !== "EV/Revenue");
+    return `
     <div class="dam-section">
       <h3 style="font-size:12px;font-family:'Playfair Display',serif;color:var(--gold);margin-bottom:4px">Damodaran Sector Benchmarks</h3>
       <table class="dam-table">
         <tr><td>Matched Industry</td><td>${dam.matched_industry}</td></tr>
-        <tr><td>EV/EBITDA (sector median)</td><td>${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>
-        <tr><td>EV/Revenue (sector median)</td><td>${dam.ev_revenue_sector_median != null ? dam.ev_revenue_sector_median.toFixed(1)+"x" : "—"}</td></tr>
-        <tr><td>Subject EV/Revenue</td><td style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.ev_revenue_multiple != null ? val.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td></tr>
-        <tr><td>Premium to Sector</td><td style="${val.valuation_flag ? 'color:var(--amber)' : ''}">${val.premium_to_sector_median_pct != null ? (val.premium_to_sector_median_pct > 0 ? "+" : "")+val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
+        ${_damPrimRow}
+        ${_showRefRows ? _damRefRows : ""}
+        <tr><td style="color:var(--text-dim);font-size:10px">Subject EV/Revenue</td><td style="${val.valuation_flag ? "color:var(--amber)" : "color:var(--text-dim)"}">${val.ev_revenue_multiple != null ? val.ev_revenue_multiple.toFixed(1)+"x" : "—"}</td></tr>
+        <tr><td>Premium to Sector</td><td style="${val.valuation_flag ? "color:var(--amber)" : ""}">${val.premium_to_sector_median_pct != null ? (val.premium_to_sector_median_pct > 0 ? "+" : "")+val.premium_to_sector_median_pct.toFixed(0)+"%" : "—"}</td></tr>
       </table>
       <div class="dam-source">Source: Damodaran NYU Stern — January 2026 &nbsp;·&nbsp;
         <a href="https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/vebitda.html" target="_blank" style="color:var(--text-dim)">EV/EBITDA</a> &nbsp;·&nbsp;
-        <a href="https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/psdata.html" target="_blank" style="color:var(--text-dim)">EV/Sales</a>
+        <a href="https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/psdata.html" target="_blank" style="color:var(--text-dim)">EV/Sales</a> &nbsp;·&nbsp;
+        <a href="https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pbvdata.html" target="_blank" style="color:var(--text-dim)">P/B</a>
       </div>
-    </div>` : "";
+    </div>`;
+  })() : "";
   const sotp = val.sotp_valuation || {};
   const sotpSegs = (sotp.segments || []).filter(s => s.name && s.implied_value_usd_millions != null);
   const sotpTable = sotpSegs.length > 0 ? `
@@ -1984,6 +2034,7 @@ function renderMemo(m) {
 
   const valSection = `<div class="memo-section">
     <h3><span class="section-num">08</span> Valuation Analysis ${liveFlag}${damFlag}</h3>
+    ${_methBox}
     <table class="fin-table">
       <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
       <tbody>
