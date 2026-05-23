@@ -3621,12 +3621,12 @@ def select_valuation_metric(
             "sector_classification": "lease_heavy",
         }
 
-    if capex_intensity_pct is not None and capex_intensity_pct >= 20:
+    if capex_intensity_pct is not None and capex_intensity_pct >= 12:
         return {
             "primary_metric":       "EV/(EBITDA-Capex)",
             "secondary_metric":     "EV/EBITDA",
             "methodology_rationale": (
-                f"Capex-intensive business ({capex_intensity_pct:.1f}% capex/revenue); "
+                f"Capex-intensive business ({capex_intensity_pct:.1f}% capex/revenue ≥12% threshold); "
                 "EV/(EBITDA-Capex) reflects true free cash flow generation capacity and "
                 "maintenance capex burden, more informative than headline EBITDA multiples "
                 "for heavy infrastructure and industrial operators."
@@ -3637,13 +3637,14 @@ def select_valuation_metric(
     if sic in ("2834", "2836") and not gaap_profitable:
         if any(t in bmd for t in ("pre-revenue", "clinical stage", "pipeline", "phase")):
             return {
-                "primary_metric":       "Risk-adjusted NPV",
-                "secondary_metric":     "EV/Program",
+                "primary_metric":       "risk-adjusted NPV (rNPV) of pipeline",
+                "secondary_metric":     "EV/Peak Sales of lead asset (comparable biotech transactions as reference)",
                 "methodology_rationale": (
-                    "Pre-revenue biotechnology company; risk-adjusted NPV of clinical "
-                    "pipeline is the institutional standard, discounting probability of "
-                    "approval and peak sales. EV per program is the secondary "
-                    "cross-check across stage and modality."
+                    "Pre-revenue biotechnology company; risk-adjusted NPV (rNPV) of the "
+                    "clinical pipeline is the institutional standard, probability-weighting "
+                    "approval outcomes and discounting peak sales. EV/Peak Sales of the lead "
+                    "asset provides a secondary cross-check anchored to comparable biotech "
+                    "M&A and licensing transactions."
                 ),
                 "sector_classification": "biotech_pre_revenue",
             }

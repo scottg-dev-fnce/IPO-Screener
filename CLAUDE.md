@@ -333,8 +333,8 @@ Integrated with existing Section 08 Valuation Analysis. Extends — does not rep
 | 2 | SIC 6199/6141/6029 + fee-based platform | `fintech_services` | EV/Revenue | EV/Gross Profit |
 | 3 | SIC 1311/1381 | `oil_gas_e_and_p` | EV/EBITDAX | NAV (PV-10) |
 | 3 | lease_intensity_pct ≥ 15% | `lease_heavy` | EV/EBITDAR | EV/EBITDA |
-| 3 | capex_intensity_pct ≥ 20% | `capex_intensive` | EV/(EBITDA-Capex) | EV/EBITDA |
-| 3 | SIC 2834/2836 + no revenue + pipeline lang | `biotech_pre_revenue` | Risk-adj NPV | EV/Program |
+| 3 | capex_intensity_pct ≥ 12% | `capex_intensive` | EV/(EBITDA-Capex) | EV/EBITDA |
+| 3 | SIC 2834/2836 + no revenue + pipeline lang | `biotech_pre_revenue` | rNPV of pipeline | EV/Peak Sales of lead asset |
 | 4 | GAAP-profitable | `standard_profitable` | EV/EBITDA | EV/EBIT |
 | 4 | GAAP-loss | `standard_unprofitable` | EV/Revenue | Forward EV/EBITDA |
 | 5 (additive) | SIC 7370-7389 + SaaS language | ← | + EV/Subscribers | |
