@@ -612,8 +612,48 @@ on disk and rewrites `_index.json` in the correct schema. The manifest is update
 ```
 
 ### When writing memos manually (outside the pipeline)
-Run `validate_memo_index("YYYY-MM-DD")` after saving any JSON to `memos/{date}/`.
-This is the fix for the "memo not showing in dashboard" class of bugs.
+
+**MANDATORY — do not skip these steps or the memo will not appear in the dashboard.**
+
+1. Write the memo JSON to `memos/{YYYY-MM-DD}/{slug}.json`
+2. Write `memos/{YYYY-MM-DD}/_index.json` with EXACTLY this schema:
+
+```json
+{
+  "run_date": "YYYY-MM-DD",
+  "run_timestamp": "YYYY-MM-DDT00:00:00Z",
+  "companies": [
+    {
+      "company_name": "...",
+      "proposed_ticker": "...",
+      "sector": "...",
+      "offering_size_usd_millions": 0.0,
+      "recommendation": "CONDITIONAL_LIGHT",
+      "score": 72.1,
+      "red_flag_count": 3,
+      "going_concern": false,
+      "is_amendment": false,
+      "file": "slug_name.json"
+    }
+  ]
+}
+```
+
+**CRITICAL SCHEMA RULES — the most common cause of "memo not showing in dashboard":**
+- Top-level array key is `companies` — NOT `memos` or `filings` or any other name
+- Each entry MUST include `file` (filename only, e.g. `forbright_inc.json`) and `score` (numeric `weighted_total`)
+- `run_date` and `run_timestamp` are required top-level strings
+- `filing_date` is optional but included by the pipeline
+
+3. Ensure `memos/_manifest.json` `dates[]` array contains this date string.
+4. Validate all files: `python3 -m json.tool memos/{date}/_index.json`
+5. Smoke test: `curl -s http://localhost:8765/memos/{date}/_index.json | python3 -m json.tool`
+
+**Auto-repair shortcut** (runs from `~/IPO_Screener/`):
+```
+python3 -c "from ipo_screener import validate_memo_index; validate_memo_index('YYYY-MM-DD')"
+```
+This reads memo files on disk, rebuilds `_index.json` with correct schema, and updates the manifest.
 
 ### Call sites in ipo_screener.py
 - After `save_daily_index([],...)` + `update_manifest(...)` in the no-filings branch
