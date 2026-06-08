@@ -291,4 +291,4 @@ This tool produces AI-assisted analysis derived from publicly available SEC fili
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+Proprietary — Viewing Only. See [LICENSE](LICENSE) file for details.
