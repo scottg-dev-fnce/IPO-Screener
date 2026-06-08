@@ -6,6 +6,12 @@ Built with Python, Claude AI, and a zero-dependency browser dashboard — no fra
 
 ---
 
+## See It In Action
+
+View a complete sample memo: [Example.md](Example.md)
+
+---
+
 ## Overview
 
 The IPO Screener is a full-stack due diligence automation tool that fetches live S-1 filings from SEC EDGAR, runs structured ECM analysis across 20 memo sections, applies 25 red flag rules with severity-weighted scoring, and renders PDF-exportable memos in a browser dashboard.
