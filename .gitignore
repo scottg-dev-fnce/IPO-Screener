@@ -13,6 +13,7 @@ build/
 
 # Raw fetched filings
 raw/
+raw_filings/
 
 # Logs
 logs/
@@ -23,3 +24,4 @@ logs/
 # Environment
 .env
 *.env
+.env.local

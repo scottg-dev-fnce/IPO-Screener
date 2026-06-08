@@ -4534,7 +4534,7 @@ def main() -> None:
         return
 
     total = len(filings)
-    print(f"  Found {total} new S-1 filing(s). Analyzing with Claude Opus...\n")
+    print(f"  Found {total} new S-1 filing(s). Running analysis...\n")
     if total > PRIORITY_FILINGS:
         print(f"  Top {PRIORITY_FILINGS} flagged as priority. Remaining queued.\n")
 

@@ -3,7 +3,6 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 # IPO Screener — ECM Due Diligence Tool
-# Regal Securities | Equity Capital Markets
 # Maintained by: Scott Goerner
 
 ## PROJECT OVERVIEW
@@ -21,10 +20,10 @@ and renders them in a browser-based app with PDF export.
 ### EDGAR / SEC.GOV FETCHING
 - NEVER use the fetch tool for any sec.gov or edgar.sec.gov URL
 - ALWAYS use bash tool with curl for all EDGAR requests
-- Correct User-Agent format: "IPO-Screener contact@regal.com"
+- Correct User-Agent format: "IPO-Screener scott@ecm.com"
 - NEVER include an email address in the User-Agent string
 - Standard curl command pattern:
-  curl -s -A "IPO-Screener contact@regal.com" "https://www.sec.gov/..."
+  curl -s -A "IPO-Screener scott@ecm.com" "https://www.sec.gov/..."
 - Filing index URL format:
   https://www.sec.gov/Archives/edgar/data/{CIK}/{accession-no-dashes}/
 - Main document search pattern: look for *s1a.htm or *s1.htm in index
@@ -249,7 +248,7 @@ COVER PAGE — Executive Summary (no section number; part of cover page)
 - Keep full 8-row table in browser view unchanged
 
 ### Cover Page
-- REGAL SECURITIES in small caps top left
+- "Equity Capital Markets IPO Due Diligence" top left
 - "Equity Capital Markets — IPO Due Diligence" subtitle
 - Thin rule separating header from company name block
 - Company name, ticker, exchange, recommendation badge

@@ -1,5 +1,5 @@
 # IPO Screener — Session Handoff Document
-# Regal Securities | Equity Capital Markets
+# Equity Capital Markets IPO Due Diligence
 # Auto-generated: 2026-05-01
 
 This document captures the complete state of the IPO Screener project for seamless
@@ -9,8 +9,8 @@ handoff to a new Claude Code session. Read this before starting any task.
 
 ## 1. PROJECT OVERVIEW
 
-The IPO Screener is a local ECM due diligence tool used by Regal Securities to
-evaluate S-1 and S-1/A filings from EDGAR. The system fetches raw filing text,
+The IPO Screener is a local ECM due diligence tool for evaluating S-1 and S-1/A
+filings from EDGAR. The system fetches raw filing text,
 runs structured due diligence analysis, generates JSON memos with a fixed schema,
 and renders them in a dark-themed browser app.
 
@@ -34,7 +34,7 @@ constant. The actual analysis is done by you reading the file and writing the me
 **EDGAR fetch rule (permanent, non-negotiable):**
 NEVER use the WebFetch tool for any sec.gov URL. ALWAYS use Bash with curl:
 ```bash
-curl -s -A "IPO-Screener contact@regal.com" "https://www.sec.gov/..."
+curl -s -A "IPO-Screener scott@ecm.com" "https://www.sec.gov/..."
 ```
 
 ---
@@ -796,15 +796,15 @@ Use this exact workflow when asked to analyze a new S-1 filing:
 
 ```bash
 # Find CIK from EDGAR submissions API
-curl -s -A "IPO-Screener contact@regal.com" \
+curl -s -A "IPO-Screener scott@ecm.com" \
   "https://data.sec.gov/submissions/CIK{10-digit-padded}.json" | python3 -m json.tool | head -100
 
 # Get filing index to find primary document filename
-curl -s -A "IPO-Screener contact@regal.com" \
+curl -s -A "IPO-Screener scott@ecm.com" \
   "https://www.sec.gov/Archives/edgar/data/{CIK}/{accession-no-dashes}/" | grep -i "htm"
 
 # Download the primary S-1/S-1A document
-curl -s -A "IPO-Screener contact@regal.com" \
+curl -s -A "IPO-Screener scott@ecm.com" \
   "https://www.sec.gov/Archives/edgar/data/{CIK}/{accession-no-dashes}/{filename}.htm" \
   -o ~/IPO_Screener/raw_filings/{slug}.htm
 
@@ -824,7 +824,7 @@ print(len(text), 'chars extracted')
 
 Always search for all versions (original S-1 plus any S-1/A amendments) and read all of them:
 ```bash
-curl -s -A "IPO-Screener contact@regal.com" \
+curl -s -A "IPO-Screener scott@ecm.com" \
   "https://efts.sec.gov/LATEST/search-index?q=%22Company+Name%22&dateRange=custom&startdt=2026-01-01&enddt=2026-05-01&forms=S-1,S-1%2FA" | python3 -m json.tool
 ```
 
@@ -930,7 +930,7 @@ NOT include rf-banner divs. The rf25Banner in buildSection16 was removed — do 
 ### PDF Export Rules
 - Section 04: 3-column table (Flag Name | Severity | Description); no RF codes; severity-sorted.
 - Section 18: PDF shows ONLY Aggressive/Highly Aggressive items. Full table in browser.
-- Cover page: REGAL SECURITIES top left, score gauge, dimension bars.
+- Cover page: "Equity Capital Markets IPO Due Diligence" top left, score gauge, dimension bars.
 - `@media print` CSS hides sidebar and filing panel, shows memo only.
 
 ### File Naming
