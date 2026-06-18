@@ -1893,6 +1893,7 @@ function renderMemo(m) {
                             : _primaryMetric.startsWith("EV/EBITDAX") ? (c.ev_ebitdax ?? null)
                             : _primaryMetric === "EV/EBITDAR" ? (c.ev_ebitdar ?? null)
                             : _primaryMetric.startsWith("EV/(EBITDA") ? (c.ev_ebitda_minus_capex ?? null)
+                            : _primaryMetric.includes("EBITDA") ? _evEbitda
                             : _evRev;
             const _secVal   = _isPBook ? (c.p_tbv_ratio ?? null)
                             : _secondaryMetric.split(",")[0].trim().includes("EBITDA") ? _evEbitda
