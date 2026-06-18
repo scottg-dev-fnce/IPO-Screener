@@ -1623,7 +1623,7 @@ async function selectCompany(date, file, companyName) {
 function renderMemo(m) {
   window._lastMemo = m;
   const scores   = m.scores    || {};
-  const fin      = m.financials || {};
+  const fin      = m.financial_snapshot || m.financials || {};
   const val      = m.valuation  || {};
   const total    = scores.weighted_total;
   const recColor = m.recommendation === "UNDERWRITE" ? "var(--green)" :
@@ -1809,7 +1809,7 @@ function renderMemo(m) {
   const damFlag  = dam.matched_industry   ? `<span class="live-badge" style="background:#6a5acd20;color:#9b8eea;border-color:#9b8eea40;margin-left:4px">DAM</span>` : "";
   // Comparable companies: support liveCompsData (yfinance-enriched), val.public_comps (object array from /comps),
   // val.comparable_companies (static), or legacy string array via public_comps
-  const _staticComps = (val.comparable_companies || []).filter(c => c && (c.ticker || c.company));
+  const _staticComps = (val.comparable_companies || []).filter(c => c && (c.ticker || c.company || c.name));
   const _pubCompsRaw  = (val.public_comps || []);
   const _pubCompsObjs = _pubCompsRaw
     .filter(c => c && typeof c === "object" && (c.ticker || c.company))
