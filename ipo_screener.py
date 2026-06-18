@@ -3225,7 +3225,8 @@ def enrich_valuation_with_live_comps(memo: dict) -> dict:
     if not val:
         return memo
 
-    raw_comps = val.get("public_comps", [])
+    # Support both legacy public_comps and modern comparable_companies field names
+    raw_comps = val.get("public_comps") or val.get("comparable_companies", [])
     if not raw_comps:
         return memo
 
@@ -3294,29 +3295,48 @@ def enrich_valuation_with_live_comps(memo: dict) -> dict:
 
     val["live_comps_data"] = live_comps
 
-    # Validate Section 15 comparable_ipos entries against yfinance
-    # Drop any comp whose ticker is delisted, returns no market cap, or has
-    # insufficient trading history (no enterpriseValue and no marketCap).
-    raw_ipos = memo.get("comparable_ipos", [])
+    # Enrich Section 16 comparable IPO entries: validate, fetch current price,
+    # and auto-compute current_vs_ipo_pct from stored ipo_price.
+    # Supports both legacy memo.comparable_ipos and modern
+    # memo.comparable_ipo_performance.comparable_ipos storage paths.
+    _cip = memo.get("comparable_ipo_performance") or {}
+    raw_ipos = (
+        _cip.get("comparable_ipos")
+        or _cip.get("recent_comps")
+        or memo.get("comparable_ipos")
+        or []
+    )
     if raw_ipos:
         valid_ipos = []
         for comp in raw_ipos:
             ticker = (comp.get("ticker") or "").strip().upper()
             if not ticker:
-                valid_ipos.append(comp)  # no ticker to validate — keep as-is
+                valid_ipos.append(comp)
                 continue
             try:
-                info = yf.Ticker(ticker).info
-                mc  = info.get("marketCap")
-                ev  = info.get("enterpriseValue")
+                info        = yf.Ticker(ticker).info
+                mc          = info.get("marketCap")
+                ev          = info.get("enterpriseValue")
+                current_px  = info.get("currentPrice") or info.get("regularMarketPrice")
                 if not mc and not ev:
-                    log.warning(f"Section 15 comp {ticker} dropped — no market cap or EV returned")
+                    log.warning(f"Section 16 comp {ticker} dropped — no market cap or EV returned")
                     continue
+                # Auto-compute current_vs_ipo_pct when ipo_price is stored
+                ipo_px = comp.get("ipo_price") or comp.get("offer_price")
+                if current_px and ipo_px and ipo_px > 0:
+                    comp = {**comp, "current_vs_ipo_pct": round((current_px - ipo_px) / ipo_px * 100, 1)}
+                    log.info(f"Section 16 {ticker}: ${ipo_px} → ${current_px} ({comp['current_vs_ipo_pct']:+.1f}%)")
                 valid_ipos.append(comp)
                 time.sleep(0.3)
             except Exception as e:
-                log.warning(f"Section 15 comp {ticker} dropped — yfinance error: {e}")
-        memo["comparable_ipos"] = valid_ipos
+                log.warning(f"Section 16 comp {ticker} — yfinance error: {e}")
+                valid_ipos.append(comp)  # keep with existing data rather than dropping
+        # Write back to whichever path the memo uses
+        if _cip.get("comparable_ipos") is not None or _cip.get("recent_comps") is not None:
+            _cip["comparable_ipos"] = valid_ipos
+            memo["comparable_ipo_performance"] = _cip
+        else:
+            memo["comparable_ipos"] = valid_ipos
 
     if ev_revenue_multiples:
         sorted_multiples = sorted(ev_revenue_multiples)
