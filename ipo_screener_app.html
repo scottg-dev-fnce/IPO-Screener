@@ -1191,6 +1191,82 @@
                             font-family:'Playfair Display',serif; font-size:11px;
                             letter-spacing:.12em; color:#8a6e30; white-space:nowrap; }
   }
+
+  /* ── GLOBAL SEARCH ── */
+  .global-search-wrap {
+    position: relative;
+    flex: 1;
+    max-width: 360px;
+  }
+  .global-search-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 5px 10px 5px 28px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .global-search-input::placeholder { color: var(--text-dim); }
+  .global-search-input:focus { border-color: var(--gold-dim); background: var(--bg); }
+  .global-search-icon {
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 11px;
+    pointer-events: none;
+  }
+  .global-search-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.65);
+    z-index: 999;
+    max-height: 440px;
+    overflow-y: auto;
+    display: none;
+  }
+  .global-search-dropdown.open { display: block; }
+  .gs-header {
+    padding: 8px 14px 6px;
+    font-size: 9px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+  }
+  .gs-result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+    transition: background 0.1s;
+  }
+  .gs-result:last-child { border-bottom: none; }
+  .gs-result:hover,
+  .gs-result.gs-active { background: var(--surface2); }
+  .gs-result-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .gs-result-name { font-family: 'Playfair Display', serif; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gs-result-meta { font-size: 10px; color: var(--text-dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .gs-result-right { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .gs-empty { padding: 18px 14px; font-size: 11px; color: var(--text-dim); text-align: center; }
+  .gs-kbd {
+    font-size: 9px; color: var(--text-dim);
+    background: var(--border2); padding: 1px 5px; border-radius: 3px;
+    letter-spacing: .04em;
+  }
 </style>
 </head>
 <body>
@@ -1205,6 +1281,18 @@
     <button class="nav-btn active" id="nav-filings" onclick="setView('filings')">Filings</button>
     <button class="nav-btn" id="nav-analytics" onclick="setView('analytics')">Analytics</button>
   </div>
+
+  <!-- Global cross-session company search -->
+  <div class="global-search-wrap" id="global-search-wrap">
+    <span class="global-search-icon">⌕</span>
+    <input type="text" class="global-search-input" id="global-search-input"
+      placeholder="Search all memos... (⌘K)"
+      oninput="onGlobalSearch(this.value)"
+      onkeydown="onGlobalSearchKey(event)"
+      autocomplete="off">
+    <div class="global-search-dropdown" id="global-search-dropdown"></div>
+  </div>
+
   <div class="topbar-meta">
     <span><span class="live-dot"></span>Daily S-1 Analysis</span>
     <button class="export-btn" onclick="exportCSV()" title="Export current day to CSV">CSV</button>
@@ -3753,6 +3841,124 @@ function validateMemo(memo) {
 
   return warnings;
 }
+
+// ─────────────────────────────────────────────────────────
+// GLOBAL SEARCH (cross-session, all dates)
+// ─────────────────────────────────────────────────────────
+var gsActiveIdx = -1;
+
+function getAllCompanies() {
+  var all = [];
+  Object.keys(sessions).forEach(function(date) {
+    var sess = sessions[date];
+    if (!sess || !sess.companies) return;
+    sess.companies.forEach(function(c) {
+      all.push(Object.assign({}, c, { date: date }));
+    });
+  });
+  // newest date first
+  all.sort(function(a, b) { return b.date.localeCompare(a.date); });
+  return all;
+}
+
+function onGlobalSearch(query) {
+  var dd = document.getElementById("global-search-dropdown");
+  if (!query.trim()) { closeGlobalSearch(); return; }
+  var q = query.toLowerCase();
+  var results = getAllCompanies().filter(function(c) {
+    return (c.company_name  && c.company_name.toLowerCase().includes(q))  ||
+           (c.proposed_ticker && c.proposed_ticker.toLowerCase().includes(q)) ||
+           (c.sector         && c.sector.toLowerCase().includes(q));
+  }).slice(0, 25);
+  gsActiveIdx = -1;
+  renderGlobalSearchDropdown(results, dd, query);
+  dd.classList.add("open");
+}
+
+function renderGlobalSearchDropdown(results, dd, query) {
+  if (results.length === 0) {
+    dd.innerHTML = '<div class="gs-header">All Memos</div><div class="gs-empty">No matching companies found</div>';
+    return;
+  }
+  var rows = results.map(function(c, i) {
+    var rec = c.recommendation || "";
+    var recClass = rec.startsWith("CONDITIONAL") ? "rec-CONDITIONAL" : ("rec-" + rec);
+    var recLabel = rec.replace(/_/g, " ") || "—";
+    var scoreStr = c.score != null ? Number(c.score).toFixed(1) : "—";
+    var d = new Date(c.date + "T12:00:00");
+    var dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    var amdChip  = c.is_amendment ? '<span class="rec-chip-amd" title="Amendment to prior S-1">AMD</span>' : "";
+    var gcChip   = c.going_concern ? '<span style="font-size:9px;background:rgba(224,82,82,.15);color:var(--red);border:1px solid rgba(224,82,82,.25);padding:1px 5px;border-radius:3px;" title="Going Concern">GC</span>' : "";
+    var sectorHtml = c.sector ? '<span>' + c.sector + '</span>' : "";
+    var tickerHtml = c.proposed_ticker ? '<span style="color:var(--accent)">' + c.proposed_ticker + '</span>' : "";
+    return '<div class="gs-result" data-idx="' + i + '" ' +
+      'onmousedown="selectGlobalResult(\'' + escAttr(c.date) + '\',\'' + escAttr(c.file) + '\',\'' + escAttr(c.company_name || "") + '\')">' +
+      '<div class="gs-result-left">' +
+        '<span class="gs-result-name">' + (c.company_name || "—") + '</span>' +
+        '<div class="gs-result-meta">' + tickerHtml + '<span>' + dateStr + '</span>' + sectorHtml + '</div>' +
+      '</div>' +
+      '<div class="gs-result-right">' +
+        gcChip + amdChip +
+        '<span class="rec-chip ' + recClass + '">' + recLabel + '</span>' +
+        '<span style="font-size:11px;color:var(--text-dim);min-width:32px;text-align:right">' + scoreStr + '</span>' +
+      '</div>' +
+    '</div>';
+  });
+  dd.innerHTML = '<div class="gs-header">All Memos &mdash; ' + results.length + ' result' + (results.length === 1 ? "" : "s") + '</div>' + rows.join("");
+}
+
+function closeGlobalSearch() {
+  var dd = document.getElementById("global-search-dropdown");
+  if (dd) dd.classList.remove("open");
+  gsActiveIdx = -1;
+}
+
+function onGlobalSearchKey(e) {
+  var dd = document.getElementById("global-search-dropdown");
+  var items = dd.querySelectorAll(".gs-result");
+  if (e.key === "Escape") {
+    closeGlobalSearch();
+    document.getElementById("global-search-input").blur();
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    gsActiveIdx = Math.min(gsActiveIdx + 1, items.length - 1);
+    items.forEach(function(el, i) { el.classList.toggle("gs-active", i === gsActiveIdx); });
+    if (items[gsActiveIdx]) items[gsActiveIdx].scrollIntoView({ block: "nearest" });
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    gsActiveIdx = Math.max(gsActiveIdx - 1, 0);
+    items.forEach(function(el, i) { el.classList.toggle("gs-active", i === gsActiveIdx); });
+    if (items[gsActiveIdx]) items[gsActiveIdx].scrollIntoView({ block: "nearest" });
+  } else if (e.key === "Enter") {
+    if (gsActiveIdx >= 0 && items[gsActiveIdx]) {
+      var el = items[gsActiveIdx];
+      var parts = el.getAttribute("onmousedown").match(/selectGlobalResult\('([^']+)','([^']+)','([^']*)'\)/);
+      if (parts) selectGlobalResult(parts[1], parts[2], parts[3]);
+    }
+  }
+}
+
+function selectGlobalResult(date, file, company) {
+  closeGlobalSearch();
+  document.getElementById("global-search-input").value = "";
+  jumpToMemo(date, file, company);
+}
+
+// Cmd+K / Ctrl+K shortcut to focus global search
+document.addEventListener("keydown", function(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+    e.preventDefault();
+    var inp = document.getElementById("global-search-input");
+    inp.focus();
+    inp.select();
+  }
+});
+
+// Click outside closes dropdown
+document.addEventListener("click", function(e) {
+  var wrap = document.getElementById("global-search-wrap");
+  if (wrap && !wrap.contains(e.target)) closeGlobalSearch();
+});
 
 // ─────────────────────────────────────────────────────────
 // BOOT
