@@ -15,6 +15,21 @@ and renders them in a browser-based app with PDF export.
 - Memos: ~/IPO_Screener/memos/{YYYY-MM-DD}/{company_name}.json
 - Manifest: ~/IPO_Screener/memos/_manifest.json
 
+## ANALYSIS MEMORY SYSTEM
+
+At the start of every S-1 analysis session, read `memory/MEMORY_INDEX.md`.
+Then load the 1-3 most relevant memory files based on the company's sector and sponsor.
+
+Memory location: `~/IPO_Screener/memory/`
+Skill: `/memory` (see `.claude/commands/memory.md`)
+
+**Critical rules:**
+- Memory files are READ-ONLY during analysis. Never write to memory during S-1 analysis.
+- Memory writes require explicit `/memory write` with user approval AFTER analysis is complete.
+- All memory files are in a public git repo — no personal info, credentials, or sensitive data.
+- To propose a new memory entry: use `/memory write` — shows diff, requires approval, then git commits.
+- To roll back a bad write: `/memory rollback [file]` or `git checkout HEAD~1 -- memory/[file]`
+
 ## CRITICAL RULES — READ BEFORE ANY TASK
 
 ### EDGAR / SEC.GOV FETCHING
@@ -589,6 +604,104 @@ python3 fetch_only.py                # Fetch only, no analysis
 python3 -m http.server 8765          # Serve the app
 pip install anthropic requests beautifulsoup4 yfinance  # Dependencies
 ```
+
+## MEMO SCHEMA VALIDATION (MANDATORY — run after EVERY memo write)
+
+After writing any memo JSON, you MUST run this validation before reporting the task complete.
+Do not skip it. Do not report "done" until all checks pass.
+
+### Required top-level sections (all 23 must be present and non-null/non-empty)
+```
+business_overview        macro_sector_context     financial_snapshot
+valuation                damodaran_comps          use_of_proceeds
+red_flags                executive_summary        deal_committee_narrative
+accounting_practices     esg_disclosure           management
+management_team          comparable_ipo_performance  lockup_analysis
+lead_underwriters        syndicate_assessment     syndicate_quality
+source_verification      revenue_quality          auditor_analysis
+litigation_regulatory    related_party_flags
+```
+
+### Type / unit checks (most common failure modes)
+| Field | Must be | Common mistake |
+|---|---|---|
+| `scores.adjustments[]` | Array of `{trigger, description}` objects | Written as plain strings |
+| `use_of_proceeds.breakdown` | Array of objects | Written as a plain object |
+| `financial_snapshot.revenue_ttm_usd_millions` | USD millions (e.g. 86698) | Won billions divided by FX without ×1000 (gives ~87 instead of 86698) |
+| `macro_sector_context.bull_case` / `bear_case` | Non-empty arrays | Missing entirely or empty arrays |
+| `comparable_ipo_performance.comparable_ipos` | Array of objects with `company` field | Missing or empty |
+| `accounting_practices` | Object with all 8 named keys + `accounting_quality_score` + `rf25_triggered` | Missing sub-keys |
+| `damodaran_comps` | Object with `matched_industry`, `ev_ebitda_sector_median`, `ev_revenue_sector_median` | Empty `{}` |
+
+### Validation command (run after every memo write)
+```bash
+python3 << 'EOF'
+import json, sys
+
+path = 'memos/YYYY-MM-DD/company_slug.json'   # ← fill in actual path
+m = json.load(open(path, encoding='utf-8'))
+
+REQUIRED = [
+    'business_overview','macro_sector_context','financial_snapshot','valuation',
+    'damodaran_comps','use_of_proceeds','red_flags','executive_summary',
+    'deal_committee_narrative','accounting_practices','esg_disclosure','management',
+    'management_team','comparable_ipo_performance','lockup_analysis','lead_underwriters',
+    'syndicate_assessment','syndicate_quality','source_verification','revenue_quality',
+    'auditor_analysis','litigation_regulatory','related_party_flags',
+]
+
+errors = []
+for k in REQUIRED:
+    v = m.get(k)
+    if v is None:                       errors.append(f"MISSING: {k}")
+    elif isinstance(v, (list,dict)) and len(v)==0: errors.append(f"EMPTY: {k}")
+
+# Type checks
+adjs = m.get('scores',{}).get('adjustments',[])
+if adjs and isinstance(adjs[0], str):   errors.append("TYPE: scores.adjustments must be objects {trigger,description}, not strings")
+
+uop_bd = m.get('use_of_proceeds',{}).get('breakdown')
+if uop_bd and not isinstance(uop_bd, list): errors.append("TYPE: use_of_proceeds.breakdown must be array, not object")
+
+fs = m.get('financial_snapshot',{})
+rev = fs.get('revenue_ttm_usd_millions') or fs.get('ttm_revenue_usd_millions')
+if rev is not None and rev < 1000 and m.get('recommendation') not in ('PASS',):
+    errors.append(f"UNITS: revenue_ttm_usd_millions={rev} looks like $B not $M — multiply by 1000")
+
+mc = m.get('macro_sector_context',{})
+if isinstance(mc, dict):
+    if not mc.get('bull_case'):         errors.append("MISSING: macro_sector_context.bull_case array")
+    if not mc.get('bear_case'):         errors.append("MISSING: macro_sector_context.bear_case array")
+
+dam = m.get('damodaran_comps',{})
+if not dam.get('ev_ebitda_sector_median'): errors.append("MISSING: damodaran_comps.ev_ebitda_sector_median")
+if not dam.get('ev_revenue_sector_median'): errors.append("MISSING: damodaran_comps.ev_revenue_sector_median")
+
+cip = m.get('comparable_ipo_performance',{}).get('comparable_ipos',[])
+if not cip:                             errors.append("MISSING: comparable_ipo_performance.comparable_ipos array")
+
+ap = m.get('accounting_practices',{})
+AP_KEYS = ['revenue_recognition','cost_capitalization','lease_classification',
+           'goodwill_impairment','depreciation_amortization','pension_obligations',
+           'non_gaap_metrics','related_party_disclosures']
+for k in AP_KEYS:
+    if not ap.get(k): errors.append(f"MISSING: accounting_practices.{k}")
+
+if errors:
+    print(f"\n❌ MEMO VALIDATION FAILED — {len(errors)} issue(s):")
+    for e in errors: print(f"   • {e}")
+    sys.exit(1)
+else:
+    print("✅ MEMO SCHEMA VALID — all 23 sections present, types correct")
+EOF
+```
+
+Then smoke-test via HTTP:
+```bash
+curl -s http://localhost:8765/memos/YYYY-MM-DD/slug.json | python3 -m json.tool > /dev/null && echo "HTTP OK"
+```
+
+**Do not mark the task complete until both commands succeed with no errors.**
 
 ## POST-SAVE INDEX VALIDATION (MANDATORY)
 
