@@ -1424,7 +1424,7 @@ function setView(view) {
 // ─────────────────────────────────────────────────────────
 async function loadSessions() {
   try {
-    const resp = await fetch(`${DATA_BASE}/_manifest.json`);
+    const resp = await fetch(`${DATA_BASE}/_manifest.json`, { cache: 'no-store' });
     if (resp.ok) {
       const manifest = await resp.json();
       for (const date of manifest.dates) await loadDateIndex(date);
@@ -1452,7 +1452,7 @@ async function tryRecentDates(days) {
 
 async function loadDateIndex(dateStr) {
   try {
-    const resp = await fetch(`${DATA_BASE}/${dateStr}/_index.json`);
+    const resp = await fetch(`${DATA_BASE}/${dateStr}/_index.json`, { cache: 'no-store' });
     if (resp.ok) sessions[dateStr] = await resp.json();
   } catch { /* no data for this date */ }
 }
@@ -1688,7 +1688,7 @@ async function selectCompany(date, file, companyName) {
   document.getElementById("memo-panel").innerHTML =
     `<div class="memo-empty"><div class="memo-empty-icon">◌</div><p>Loading memo...</p></div>`;
   try {
-    const resp = await fetch(`${DATA_BASE}/${date}/${file}`);
+    const resp = await fetch(`${DATA_BASE}/${date}/${file}`, { cache: 'no-store' });
     if (!resp.ok) throw new Error("Not found");
     const data = await resp.json();
     const _valWarnings = validateMemo(data);
@@ -1731,7 +1731,7 @@ function renderMemo(m) {
     { label: "Valuation Attractiveness",       val: scores.valuation_attractiveness,   w: 20 }
   ];
   const dimBars = dims.map(d => {
-    const v   = d.val != null ? d.val / 10 : null;
+    const v   = d.val != null ? d.val : null;
     const pct = v != null ? (v / 10 * 100).toFixed(0) + "%" : "0%";
     const col = v >= 7.5 ? "var(--green)" : v >= 5.5 ? "var(--amber)" : "var(--red)";
     return `<div class="dim-row">
@@ -2015,19 +2015,19 @@ function renderMemo(m) {
       </div>` : "";
   const damRows = dam.matched_industry ? `
         <tr><td colspan="2" style="padding-top:12px;color:var(--text-dim);font-size:10px;letter-spacing:.06em;text-transform:uppercase">Damodaran Sector Benchmarks — ${dam.matched_industry}</td></tr>
-        <tr><td>EV/EBITDA (Damodaran)</td><td class="val-col">${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>
-        <tr><td>EV/Revenue (Damodaran)</td><td class="val-col">${dam.ev_revenue_sector_median != null ? dam.ev_revenue_sector_median.toFixed(1)+"x" : "—"}</td></tr>` : "";
+        <tr><td>EV/EBITDA (Damodaran)</td><td class="val-col">${typeof dam.ev_ebitda_sector_median === 'number' ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : (dam.ev_ebitda_sector_median || "—")}</td></tr>
+        <tr><td>EV/Revenue (Damodaran)</td><td class="val-col">${typeof dam.ev_revenue_sector_median === 'number' ? dam.ev_revenue_sector_median.toFixed(1)+"x" : (dam.ev_revenue_sector_median || "—")}</td></tr>` : "";
   const damBench = dam.matched_industry ? (() => {
     // Primary benchmark row adapts to sector classification
     const _damPrimMetric = dam.primary_benchmark_metric || "EV/EBITDA";
     const _damPrimVal    = dam.primary_benchmark_value;
     const _damPrimRow    = _damPrimVal != null
-      ? `<tr><td>${_damPrimMetric} (sector median)</td><td>${_damPrimVal.toFixed(1)}x</td></tr>`
+      ? `<tr><td>${_damPrimMetric} (sector median)</td><td>${typeof _damPrimVal === 'number' ? _damPrimVal.toFixed(1)+"x" : _damPrimVal}</td></tr>`
       : `<tr><td>${_damPrimMetric} (sector median)</td><td style="color:var(--text-dim)">—</td></tr>`;
     // Always show EV/EBITDA and EV/Revenue as reference rows
     const _damRefRows = `
-      <tr><td style="color:var(--text-dim);font-size:10px">EV/EBITDA (ref)</td><td style="color:var(--text-dim)">${dam.ev_ebitda_sector_median != null ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : "—"}</td></tr>
-      <tr><td style="color:var(--text-dim);font-size:10px">EV/Revenue (ref)</td><td style="color:var(--text-dim)">${dam.ev_revenue_sector_median != null ? dam.ev_revenue_sector_median.toFixed(1)+"x" : "—"}</td></tr>`;
+      <tr><td style="color:var(--text-dim);font-size:10px">EV/EBITDA (ref)</td><td style="color:var(--text-dim)">${typeof dam.ev_ebitda_sector_median === 'number' ? dam.ev_ebitda_sector_median.toFixed(1)+"x" : (dam.ev_ebitda_sector_median || "—")}</td></tr>
+      <tr><td style="color:var(--text-dim);font-size:10px">EV/Revenue (ref)</td><td style="color:var(--text-dim)">${typeof dam.ev_revenue_sector_median === 'number' ? dam.ev_revenue_sector_median.toFixed(1)+"x" : (dam.ev_revenue_sector_median || "—")}</td></tr>`;
     const _showRefRows = (_damPrimMetric !== "EV/EBITDA" && _damPrimMetric !== "EV/Revenue");
     return `
     <div class="dam-section">
@@ -2502,7 +2502,7 @@ function renderMemo(m) {
 
   // ── Dimension bars for cover (thresholds: green ≥7.0, amber 5.0–6.9, red <5.0) ──
   const _coverDims = dims.map(d => {
-    const v   = d.val != null ? d.val / 10 : null;
+    const v   = d.val != null ? d.val : null;
     const pct = v != null ? (v / 10 * 100).toFixed(0) + "%" : "0%";
     const col = v >= 7.0 ? "var(--green)" : v >= 5.0 ? "var(--amber)" : "var(--red)";
     return `<div class="cover-dim-row">
@@ -2593,9 +2593,10 @@ function renderMemo(m) {
           if (!bo) return missingDataFlag("Business Overview");
           if (typeof bo === "string") return `<p class="memo-prose">${bo}</p>`;
           const desc = bo.description || bo.overview || bo.summary || "";
-          const products = (bo.key_products  || []).filter(Boolean);
-          const advtgs   = (bo.competitive_advantages || []).filter(Boolean);
-          const risks    = (bo.key_risks || []).filter(Boolean);
+          const _boArrify = v => !v ? [] : Array.isArray(v) ? v.filter(Boolean) : String(v).split(/;\s*|\n/).map(s=>s.trim()).filter(Boolean);
+          const products = _boArrify(bo.key_products  || bo.products_and_services);
+          const advtgs   = _boArrify(bo.competitive_advantages || bo.competitive_moat);
+          const risks    = _boArrify(bo.key_risks);
           const bizModel = bo.business_model || "";
           const meta = [
             bo.founded      ? `Founded: ${bo.founded}` : "",
@@ -2681,7 +2682,7 @@ function renderMemo(m) {
           : "";
         return `<div class="memo-section">
           <h3><span class="section-num">13</span> Underwriting Syndicate</h3>
-          <p class="memo-prose">${m.lead_underwriters.join(" · ")} &nbsp;—&nbsp; ${m.underwriter_tier || ""} &nbsp;·&nbsp; ${m.ipo_type || ""}</p>
+          <p class="memo-prose">${m.lead_underwriters.map(u => typeof u === "string" ? u : (u.firm || u.name || JSON.stringify(u))).join(" · ")} &nbsp;—&nbsp; ${m.underwriter_tier || ""} &nbsp;·&nbsp; ${m.ipo_type || ""}</p>
           ${uwCount}${spreadBanner}
         </div>`;
       })() : ""}
@@ -3093,15 +3094,42 @@ function buildSection14(m) {
 
 function buildSection15(m) {
   const lr = m.litigation_regulatory || {};
-  const rpFlags = (m.related_party_flags || []).filter(Boolean);
-  if (!lr.litigation_risk_level && !lr.litigation_summary && rpFlags.length === 0) return "";
-  const risk = (lr.litigation_risk_level || "none").toLowerCase();
+
+  // Handle both array (old schema) and object (new schema) for related_party_flags
+  const _rpfRaw = m.related_party_flags;
+  let rpFlags;
+  if (Array.isArray(_rpfRaw)) {
+    rpFlags = _rpfRaw.filter(Boolean);
+  } else if (_rpfRaw && typeof _rpfRaw === "object") {
+    // New schema: extract material_related_party_transactions array and/or rf09_details narrative
+    const _txns = Array.isArray(_rpfRaw.material_related_party_transactions)
+      ? _rpfRaw.material_related_party_transactions : [];
+    rpFlags = _txns.map(t => ({
+      description: [t.party, t.transaction_type, t.risk_assessment].filter(Boolean).join(" — ")
+    }));
+    if (rpFlags.length === 0 && _rpfRaw.rf09_details) {
+      rpFlags = [{ description: _rpfRaw.rf09_details }];
+    }
+  } else {
+    rpFlags = [];
+  }
+
+  // New schema field aliases for litigation_regulatory
+  const _lrRiskLevel  = lr.litigation_risk_level  || null;
+  const _lrSummary    = lr.litigation_summary      || lr.material_litigation || lr.regulatory_overhang || "";
+  const _lrSecInv     = lr.pending_sec_investigations != null ? lr.pending_sec_investigations : (lr.sec_investigation || false);
+  const _lrFinra      = lr.pending_finra_actions   || false;
+  const _lrClassAction = lr.class_action_suits     || false;
+  const _lrRegProc    = lr.material_regulatory_proceedings || false;
+
+  if (!_lrRiskLevel && !_lrSummary && rpFlags.length === 0) return "";
+  const risk = (_lrRiskLevel || "none").toLowerCase();
   const riskCls = risk === "none" ? "litig-none" : risk === "low" ? "litig-low" : risk === "medium" ? "litig-medium" : risk === "high" ? "litig-high" : "litig-critical";
   const bools = [
-    ["Pending SEC Investigation / Enforcement", lr.pending_sec_investigations],
-    ["Pending FINRA Actions",                   lr.pending_finra_actions],
-    ["Material Class Action Lawsuits",          lr.class_action_suits],
-    ["Other Material Regulatory Proceedings",   lr.material_regulatory_proceedings],
+    ["Pending SEC Investigation / Enforcement", _lrSecInv],
+    ["Pending FINRA Actions",                   _lrFinra],
+    ["Material Class Action Lawsuits",          _lrClassAction],
+    ["Other Material Regulatory Proceedings",   _lrRegProc],
   ];
   const rpBlock = rpFlags.length > 0 ? `
     <p style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin:16px 0 8px">Related Party Transactions</p>
@@ -3111,7 +3139,7 @@ function buildSection15(m) {
     }).join("")}</div>` : "";
   return `<div class="memo-section">
     <h3><span class="section-num">05</span> Litigation, Regulatory &amp; Related Party Exposure</h3>
-    ${lr.litigation_risk_level ? `<p style="margin-bottom:14px">Litigation Risk Level: <span class="litig-badge ${riskCls}">${lr.litigation_risk_level}</span></p>` : ""}
+    ${_lrRiskLevel ? `<p style="margin-bottom:14px">Litigation Risk Level: <span class="litig-badge ${riskCls}">${_lrRiskLevel}</span></p>` : ""}
     <div style="margin-bottom:14px">
       ${bools.map(r => `<div class="bool-row">
         <span class="${r[1] ? "bool-icon-yes" : "bool-icon-no"}">${r[1] ? "&#x2691;" : "&#x2713;"}</span>
@@ -3119,7 +3147,7 @@ function buildSection15(m) {
         <span style="margin-left:auto;font-size:11px;font-weight:600;color:${r[1] ? "var(--red)" : "var(--green)"}">${r[1] ? "YES" : "NO"}</span>
       </div>`).join("")}
     </div>
-    ${lr.litigation_summary ? `<p style="font-size:12px;color:var(--text-mid);line-height:1.7;font-family:'Libre Baskerville',serif">${lr.litigation_summary}</p>` : ""}
+    ${_lrSummary ? `<p style="font-size:12px;color:var(--text-mid);line-height:1.7;font-family:'Libre Baskerville',serif">${_lrSummary}</p>` : ""}
     ${rpBlock}
   </div>`;
 }
@@ -3713,7 +3741,6 @@ function validateMemo(memo) {
     { path: "scores.weighted_total", type: "number"  },
     { path: "executive_summary",     type: "string"  },
     { path: "red_flags",             type: "array"   },
-    { path: "financials",            type: "object"  },
     { path: "valuation",             type: "object"  },
     { path: "accounting_practices",  type: "object"  },
     { path: "esg_disclosure",        type: "object"  },
@@ -3727,6 +3754,11 @@ function validateMemo(memo) {
       _warn("MISSING/WRONG TYPE: " + c.path + " — expected " + c.type + " got " + actual);
     }
   });
+  // financials check accepts either schema name (renderMemo supports both)
+  var _finObj = memo.financials || memo.financial_snapshot;
+  if (_finObj == null || typeof _finObj !== "object" || Array.isArray(_finObj)) {
+    _warn("MISSING/WRONG TYPE: financials/financial_snapshot — expected object got " + (Array.isArray(_finObj) ? "array" : typeof _finObj));
+  }
 
   // ── New check A: public_comps / comparable_companies entries must be structured objects ──
   var _val = memo.valuation || {};

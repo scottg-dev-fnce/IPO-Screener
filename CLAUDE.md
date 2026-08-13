@@ -411,6 +411,44 @@ Section 08 renderer reads `val.primary_metric` and `val.secondary_metric` with f
 - Key URLs:
   EV/EBITDA: https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/vebitda.html
   EV/Sales: https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/psdata.html
+  Margins: https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/margin.html
+  Debt Fundamentals: https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/dbtfund.htm
+
+### Critical Damodaran column rules
+- EV/EBITDA: ALWAYS use the "all firms" right-side column (not the positive-EBITDA-only left column)
+- EV/Revenue: ALWAYS use EV/Sales column (not Price/Sales)
+- For GAAP-loss companies: compare EV/Adj.EBITDA vs the all-firms sector median
+
+### Verified sector benchmarks (January 2026)
+| Sector | EV/Revenue | EV/EBITDA (all) | Gross Margin | Net Margin | Mkt D/E | Debt/EBITDA |
+|---|---|---|---|---|---|---|
+| Aerospace/Defense | 3.57× | 33.42× | 17.48% | 4.99% | 15.38% | 4.62× |
+| Business & Consumer Services | 2.53× | 16.17× | 33.38% | 7.03% | — | — |
+| Computer Services | 1.48× | 16.46× | — | 4.45% | — | — |
+| Drugs (Biotechnology) | 7.92× | 51.49× | — | -5.00% | — | — |
+| Healthcare Products | 4.76× | 23.42× | — | 9.61% | 12.52% | 2.74× |
+| Hospitals/Healthcare Facilities | 1.69× | 11.84× | 39.10% | 6.30% | — | — |
+| Restaurant/Dining | 4.17× | — | 32.24% | 9.37% | 27.05% | 4.67× |
+| Retail (General) | 2.11× | — | — | 5.61% | 8.13% | 1.58× |
+| Semiconductor | 15.70× | — | 58.97% | 30.45% | 2.58% | 1.09× |
+| Software (Entertainment) | 9.13× | 26.16× | 66.45% | 29.93% | 2.09% | 0.53× |
+| Software (Internet) | 9.56× | 100.45× | 62.58% | -0.93% | 13.74% | 11.32× |
+| Software (System & Application) | 11.41× | 31.75× | 71.72% | 25.49% | 5.67% | 1.71× |
+
+### VA Rubric Summary (full anchors in SYSTEM_PROMPT in ipo_screener.py)
+VA base score is set on these PRIMARY criteria (before RF-07 Python deductions):
+1. Gross margin vs sector median (primary)
+2. Net income margin vs sector median (primary)
+3. Market D/E vs sector norm (primary)
+4. Debt/EBITDA vs sector norm (primary)
+5. EV/Revenue and EV/EBITDA vs sector medians (secondary/context — don't double-count RF-07)
+
+Band anchors:
+- 9–10: At/below sector on all metrics; gross margin ≥ sector; positive net margin
+- 7–8: Gross margin >1.25× sector; breakeven or improving OCF; D/E and Debt/EBITDA within 1.5×/1.25× sector
+- 5–6: Mixed — gross margin 0.75–1.25× sector; negative net margin; D/E 1.5–2.5× sector
+- 3–4: Below-sector gross margin (<0.75×); materially negative net margin; D/E >2.5× sector
+- 1–2: Negative gross margin; deeply negative net margin; extreme leverage (D/E >4× sector)
 
 ## EXISTING MEMOS
 | Company | Date | Rec | Score |
@@ -665,7 +703,7 @@ if uop_bd and not isinstance(uop_bd, list): errors.append("TYPE: use_of_proceeds
 
 fs = m.get('financial_snapshot',{})
 rev = fs.get('revenue_ttm_usd_millions') or fs.get('ttm_revenue_usd_millions')
-if rev is not None and rev < 1000 and m.get('recommendation') not in ('PASS',):
+if rev is not None and rev < 50 and m.get('recommendation') not in ('PASS',):
     errors.append(f"UNITS: revenue_ttm_usd_millions={rev} looks like $B not $M — multiply by 1000")
 
 mc = m.get('macro_sector_context',{})

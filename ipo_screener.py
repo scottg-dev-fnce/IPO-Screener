@@ -865,6 +865,78 @@ BUSINESS MODEL QUALITY — SECTOR-ADJUSTED RUBRIC ANCHORS:
   NRR benchmarks (subscription/SaaS businesses only):
     world-class >120%  |  good 105–120%  |  acceptable 90–105%  |  concerning <90%
 
+VALUATION ATTRACTIVENESS — MULTI-METRIC RUBRIC ANCHORS:
+  Score VA as a holistic assessment of how attractive the deal is for incoming public investors,
+  benchmarked against sector Damodaran data. Apply these anchors BEFORE RF-07 deductions
+  (RF-07 / RF-07A / RF-07B are applied post-scoring by Python). The base VA reflects the
+  company's intrinsic economics and capital structure; RF-07 flags then penalize specific
+  valuation-threshold breaches on top of that base. This keeps the rubric and the flags
+  non-redundant.
+
+  PRIMARY criteria (dominant weight in setting the band):
+    1. Gross margin vs Damodaran sector median — earnings quality and pricing power
+    2. Net income margin vs sector median — profitability trajectory and leverage on returns
+    3. Market Debt-to-Equity ratio vs sector norm — leverage amplification of equity downside
+    4. Debt/EBITDA vs sector norm — debt serviceability and structural sustainability
+
+  SECONDARY criteria (calibrate within the band; do NOT double-count with RF-07):
+    5. EV/Revenue vs sector median — provides price context; RF-07A fires independently if >50%
+    6. EV/EBITDA (all firms) vs sector median — multiple context; RF-07B fires independently
+    7. Revenue growth trajectory — sustained >25% growth partially offsets premium pricing
+    8. Operating cash flow trend — distinguishes GAAP-loss from cash-flow impairment
+
+  BAND ANCHORS (set base score here; RF-07 deductions are applied by Python afterward):
+  9–10 = Compelling value. Gross margin at or above sector median. Net margin positive and
+         at or above sector norm. D/E at or below sector norm. Debt/EBITDA at or below
+         sector norm. EV/Revenue at or below sector median. EV/EBITDA at or below sector
+         median. IPO offers above-sector economics at fair-to-discounted pricing.
+
+  7–8  = Moderately attractive. Gross margin above sector median (>1.25× norm). Net margin
+         breakeven or modestly negative with a credible near-term path and positive operating
+         cash flow trend. D/E within 1.5× sector norm. Debt/EBITDA within 1.25× sector norm.
+         EV/Revenue up to 25% above sector median (secondary context only — RF-07A fires
+         separately for >50%). EV/EBITDA up to 25% above sector median. Strong gross margins
+         or below-sector leverage can hold a score in this range even with GAAP losses,
+         provided OCF trajectory is improving.
+
+  5–6  = Fair value / neutral. Gross margin near sector median (0.75–1.25× norm). Net margin
+         negative with uncertain profitability timeline but no structural impairment of unit
+         economics. D/E 1.5–2.5× sector norm. Debt/EBITDA 1.25–1.75× sector norm.
+         EV/Revenue 25–50% above sector median. EV/EBITDA 25–50% above sector median.
+         Growth rate partially, but not convincingly, justifies the premium.
+
+  3–4  = Stretched / below-average attractiveness. Gross margin below sector median (<0.75×)
+         or declining despite scale. Net margin materially negative with no near-term
+         inflection. D/E >2.5× sector norm. Debt/EBITDA 1.75–3× sector norm. EV/Revenue
+         50–100% above sector median (RF-07A will fire separately). EV/EBITDA >25× on
+         GAAP-loss with <30% growth (RF-07B will fire). Economics alone do not justify the
+         premium; execution must be perfect with no margin of safety for public investors.
+
+  1–2  = Unattractive / highly overvalued. Gross margin negative or far below sector median
+         (<0.5×). Net margin deeply negative with no credible path. D/E >4× sector norm.
+         Debt/EBITDA >3× sector norm. EV/Revenue >2× sector median. EV/EBITDA extreme
+         relative to sector (>100× on GAAP-loss or >2× sector median). Investors absorb
+         simultaneous valuation risk and severe leverage risk — asymmetric downside.
+
+  DAMODARAN SECTOR BENCHMARKS (January 2026 — always use sector-matched values):
+  Use the "all firms" column for EV/EBITDA (not positive-EBITDA-only firms).
+  Use the EV/Sales column for EV/Revenue (not Price/Sales).
+  Sector                             EV/Revenue  EV/EBITDA(all)  Gross Margin  Net Margin  Mkt D/E  Debt/EBITDA
+  Aerospace/Defense                   3.57×         33.42×         17.48%         4.99%     15.38%    4.62×
+  Business & Consumer Services        2.53×         16.17×         33.38%         7.03%       —         —
+  Computer Services                   1.48×         16.46×            —           4.45%       —         —
+  Drugs (Biotechnology)               7.92×         51.49×            —          -5.00%       —         —
+  Healthcare Products                 4.76×         23.42×            —           9.61%     12.52%    2.74×
+  Hospitals/Healthcare Facilities     1.69×         11.84×         39.10%         6.30%       —         —
+  Restaurant/Dining                   4.17×           —            32.24%         9.37%     27.05%    4.67×
+  Retail (General)                    2.11×           —               —           5.61%      8.13%    1.58×
+  Semiconductor                      15.70×           —            58.97%        30.45%      2.58%    1.09×
+  Software (Entertainment)            9.13×         26.16×         66.45%        29.93%      2.09%    0.53×
+  Software (Internet)                 9.56×        100.45×         62.58%        -0.93%     13.74%   11.32×
+  Software (System & Application)    11.41×         31.75×         71.72%        25.49%      5.67%    1.71×
+  For unlisted sectors: fetch live Damodaran data in enrich_with_damodaran().
+  For GAAP-loss companies: compare EV/Adj.EBITDA vs the all-firms sector median.
+
 MANAGEMENT & GOVERNANCE — DUAL-CLASS GOVERNANCE ASSESSMENT:
   When a dual-class share structure exists, assess the FOUNDER TRACK RECORD across
   five dimensions: (1) prior public company CEO experience, (2) domain expertise,
