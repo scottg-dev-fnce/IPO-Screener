@@ -2415,26 +2415,41 @@ function renderMemo(m) {
         </tr>`;
       }).join("")}</tbody>
     </table>` : "";
-  // Detailed table from breakdown-array schema — always shown (not gated on _hasBarData)
+  // Net proceeds summary line (shows company-received proceeds vs. total offering)
+  const _netProceedsMM  = uop.net_proceeds_to_company_mm ?? uop.net_proceeds_to_company_usd_millions;
+  const _totalProceedsMM = uop.total_proceeds_mm ?? uop.gross_proceeds_usd_millions ?? m.offering_size_usd_millions;
+  const netProceedsSummary = (_netProceedsMM != null && _totalProceedsMM != null)
+    ? `<p style="font-size:11px;color:var(--text-dim);margin:0 0 8px">
+        Total offering: <strong style="color:var(--text)">$${_totalProceedsMM.toLocaleString()}M</strong>
+        &nbsp;·&nbsp; Net proceeds to company: <strong style="color:var(--text)">$${_netProceedsMM.toLocaleString()}M</strong>
+        &nbsp;·&nbsp; <span style="color:var(--text-dim);font-style:italic">Remainder to selling stockholder(s)</span>
+      </p>`
+    : "";
+  // Detailed table from breakdown-array schema — supports both field-name conventions
   const breakdownTable = _breakdown.length > 0 ? `
-    <table class="fin-table" style="margin-top:8px">
+    ${netProceedsSummary}
+    <table class="fin-table" style="margin-top:4px">
       <thead><tr>
         <th>Purpose</th>
         <th style="text-align:right">Amount</th>
-        <th style="text-align:right">% of Proceeds</th>
+        <th style="text-align:right">% of Net Proceeds</th>
       </tr></thead>
       <tbody>${_breakdown.map(row => {
-        const _pctVal = row.pct_of_proceeds ?? row.pct_of_net_proceeds;
+        // Accept both naming conventions: pct/amount_mm (new) and pct_of_proceeds/amount_usd_millions (legacy)
+        const _pctVal = row.pct_of_proceeds ?? row.pct_of_net_proceeds ?? row.pct;
         const pct = _pctVal != null ? _pctVal.toFixed(1) + "%" : "—";
-        const amt = row.amount_usd_millions != null
-          ? "$" + row.amount_usd_millions.toLocaleString() + "M"
+        const _amtRaw = row.amount_usd_millions ?? row.amount_mm;
+        const amt = _amtRaw != null
+          ? "$" + Number(_amtRaw).toLocaleString() + "M"
           : (row.amount_label || "—");
-        const noteHtml = row.note
-          ? `<br><span style="font-size:10px;color:var(--text-dim)">${row.note}</span>` : "";
+        // Show row.description or row.note as inline detail under the category name
+        const _detail = row.description || row.note || "";
+        const noteHtml = _detail
+          ? `<br><span style="font-size:10px;color:var(--text-dim);line-height:1.5;display:block;margin-top:2px">${_detail}</span>` : "";
         return `<tr>
           <td class="label-col">${safeRender(row.purpose || row.category, {fallback:"—"})}${noteHtml}</td>
-          <td class="val-col">${amt}</td>
-          <td class="val-col">${pct}</td>
+          <td class="val-col" style="vertical-align:top">${amt}</td>
+          <td class="val-col" style="vertical-align:top">${pct}</td>
         </tr>`;
       }).join("")}</tbody>
     </table>` : "";
@@ -2453,6 +2468,20 @@ function renderMemo(m) {
         uop.rf19_comment ? " — " + uop.rf19_comment.slice(0, 160) + "…" : ""
       }</div>`
     : "";
+  // Notes field — structural context (e.g. selling stockholder proceeds)
+  const _uopNotes = uop.notes || uop.proceeds_notes || "";
+  const uopNotesHtml = _uopNotes
+    ? `<p style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.6;font-style:italic">${_uopNotes}</p>`
+    : "";
+  // Proceeds quality assessment — render in Section 07 when nested in uop (fallback for memos
+  // that stored it there instead of top-level; top-level field renders in Section 04)
+  const _uopPqa = uop.proceeds_quality_assessment;
+  const uopPqaHtml = _uopPqa && !m.proceeds_quality_assessment
+    ? `<div class="strategic-assessment-panel" style="margin-top:12px">
+        <div class="sa-header">&#x2696; Proceeds Quality Assessment</div>
+        <div class="sa-body">${safeRender(_uopPqa)}</div>
+      </div>`
+    : "";
   const _hasAnyProceeds = _hasBarData || _breakdown.length > 0;
   const proceedsContent = `
     ${rf19Banner}
@@ -2465,6 +2494,8 @@ function renderMemo(m) {
     ${_breakdown.length > 0 ? breakdownTable : ""}
     ${!_hasAnyProceeds ? missingDataFlag("Use of Proceeds") : ""}
     ${uop.proceeds_narrative ? `<p class="proceeds-narrative">${uop.proceeds_narrative}</p>` : ""}
+    ${uopNotesHtml}
+    ${uopPqaHtml}
   `;
 
   // ── Cover page alerts strip ─────────────────────────────────────────────
@@ -2557,7 +2588,7 @@ function renderMemo(m) {
             <tr><td class="cmt-lbl">Sector</td>      <td class="cmt-val">${m.sector || "\u2014"}</td></tr>
             <tr><td class="cmt-lbl">Offering</td>    <td class="cmt-val">${m.offering_size_usd_millions != null ? "$" + m.offering_size_usd_millions + "M" : "\u2014"}</td></tr>
             <tr><td class="cmt-lbl">Price Range</td> <td class="cmt-val">${m.proposed_price_range || "\u2014"}</td></tr>
-            <tr><td class="cmt-lbl">Auditor</td>     <td class="cmt-val" style="${m.auditor_flag ? "color:var(--amber)" : ""}">${m.auditor || "\u2014"}</td></tr>
+            <tr><td class="cmt-lbl">Auditor</td>     <td class="cmt-val" style="${m.auditor_flag ? "color:var(--amber)" : ""}">${m.auditor || (m.auditor_analysis || {}).auditor_name || "\u2014"}</td></tr>
             <tr><td class="cmt-lbl">Filed</td>       <td class="cmt-val">${m.filing_date || "\u2014"}</td></tr>
             <tr><td class="cmt-lbl">Underwriting</td><td class="cmt-val">${_uwTypeStr}</td></tr>
           </table>
