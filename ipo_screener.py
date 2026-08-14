@@ -421,68 +421,6 @@ Analyze the following from the filing text provided:
         "risk_rating"    — exactly one of: Conservative / Standard / Aggressive / Highly Aggressive
       Do NOT output the 8 dimensions as top-level named keys — they MUST be inside items[].
 
-[S] ESG DISCLOSURE SCORE  (Bloomberg Disclosure Methodology — scored 0–100)
-    - Score what the S-1 DISCLOSES, not what the company has achieved. A company
-      with no emissions but no disclosure scores low; a company with high emissions
-      and full quantified disclosure scores high.
-    - Score each pillar 0–100 using the rubric below. Compute:
-        composite_score = round((E × 0.30) + (S × 0.35) + (G × 0.35), 1)
-
-    ENVIRONMENTAL (E) — weight 30%
-      Assess disclosure quality on:
-        • Climate risk and TCFD-aligned scenario analysis
-        • GHG emissions (Scope 1, 2, 3) — quantified vs. qualitative only
-        • Energy consumption and renewable energy sourcing
-        • Water, waste, hazardous materials (weight by sector relevance)
-        • Environmental policy statements with measurable targets vs. boilerplate
-        • Regulatory environmental compliance history
-      Sector calibration: asset-light companies (software, biotech) are not expected
-      to have extensive E disclosure; a score of 25–35 is typical and not penalized
-      in context. Industrial, energy, and materials companies are held to a higher standard.
-
-    SOCIAL (S) — weight 35%
-      Assess disclosure quality on:
-        • Human capital: headcount, voluntary turnover, training hours, pay equity
-        • Workforce diversity data (gender / ethnicity at management and board level)
-        • Employee health & safety metrics (OSHA recordable rates, lost-time incidents)
-        • Benefits, wellness programs, parental leave policy
-        • Community investment and social impact programs
-        • Supply chain labor standards, modern slavery / forced labor disclosures
-        • Customer data privacy and cybersecurity practices (for tech/fintech/healthcare)
-      SEC human capital disclosure rules (2020) require some minimum S disclosure
-      in every S-1; baseline S scores of 30–45 are expected for compliant filings.
-
-    GOVERNANCE (G) — weight 35%
-      Assess disclosure quality on:
-        • Board composition: independence %, gender / ethnic diversity, tenure distribution
-        • Executive compensation structure and pay-for-performance alignment
-        • Anti-corruption / anti-bribery policy (FCPA, UK Bribery Act compliance)
-        • Whistleblower program and ethics hotline
-        • Shareholder rights: dual-class shares, staggered board, poison pill, supermajority
-        • Board-level ESG or sustainability oversight (committee mandate or full-board)
-        • Related party transaction policy, frequency of approval, and transparency
-        • Cybersecurity governance: board-level oversight, CISO role, incident response plan
-      SEC requires proxy-level governance disclosure in Form S-1; expect G baseline
-      of 40–60 for well-structured offerings.
-
-    SCORING RUBRIC (per pillar):
-        80–100 = Comprehensive: quantified metrics, multi-year trends, forward targets,
-                 third-party verification or alignment with GRI / SASB / TCFD frameworks
-        60–79  = Adequate: mix of quantified data and qualitative statements,
-                 policy commitments with some measurability, no external framework
-        40–59  = Basic: qualitative policy statements and boilerplate language,
-                 limited quantification, no external framework alignment
-        20–39  = Minimal: a few paragraphs addressing the topic, no data, no commitments
-        0–19   = Absent or purely boilerplate risk factor language with no substantive
-                 disclosure beyond generic "ESG risks may affect our business" statements
-
-    - For each pillar populate highlights[] with 2–4 specific disclosures FROM the filing
-      (cite section or language). Leave empty array if nothing meaningful is disclosed.
-    - For each pillar populate gaps[] with 2–4 material disclosures ABSENT but expected
-      for the sector and company stage.
-    - Populate disclosure_narrative with 2–3 sentences summarizing overall ESG disclosure
-      posture, any sector-relevant calibration notes, and the most important gap.
-
 [V] VALUATION
     - Compute implied enterprise value at the MIDPOINT of the proposed offering price range:
         Implied EV = (midpoint price × fully-diluted shares outstanding) + total debt − cash
@@ -1362,27 +1300,6 @@ Use this exact schema:
     "rf25_triggered": false,
     "rf25_reason": "",
     "accounting_quality_summary": ""
-  },
-
-  "esg_disclosure": {
-    "environmental": {
-      "score": null,
-      "highlights": [],
-      "gaps": []
-    },
-    "social": {
-      "score": null,
-      "highlights": [],
-      "gaps": []
-    },
-    "governance": {
-      "score": null,
-      "highlights": [],
-      "gaps": []
-    },
-    "composite_score": null,
-    "weights": {"e": 0.30, "s": 0.35, "g": 0.35},
-    "disclosure_narrative": ""
   },
 
   "source_verification": {
@@ -4534,7 +4451,6 @@ def validate_pdf_output(memo: dict) -> list:
         ("12",    "Macro & Sector Context",      memo.get("macro_sector_context")),
         ("13",    "Underwriting Syndicate",      memo.get("lead_underwriters")),
         ("18",    "Accounting Practices",        memo.get("accounting_practices")),
-        ("19",    "ESG Disclosure",              memo.get("esg_disclosure")),
     ]
     for sec, label, val in section_checks:
         if is_empty(val):
@@ -4569,7 +4485,6 @@ def validate_pdf_output(memo: dict) -> list:
         ("04", "Part II  (Risk Assessment)",            memo.get("red_flags")),
         ("06", "Part III (Business & Financial)",       memo.get("financials")),
         ("13", "Part IV  (Deal Structure & Diligence)", memo.get("lead_underwriters")),
-        ("19", "Part V   (ESG)",                        memo.get("esg_disclosure")),
     ]
     for sec, part_label, val in part_targets:
         if is_empty(val):

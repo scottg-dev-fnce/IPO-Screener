@@ -965,8 +965,7 @@
     /* ── Typography ── */
     #memo-panel .memo-prose,
     #memo-panel .committee-block,
-    #memo-panel .acct-score-text,
-    #memo-panel .esg-composite-text { font-family: 'Libre Baskerville', serif !important; }
+    #memo-panel .acct-score-text { font-family: 'Libre Baskerville', serif !important; }
     #memo-panel .memo-section h3 { font-family: 'Playfair Display', serif !important; }
     #memo-panel .acct-badge { font-family: 'Libre Baskerville', serif !important;
                               font-size: 9px !important; letter-spacing: .02em !important; }
@@ -1134,44 +1133,6 @@
   .validate-warn-banner strong { display:block; margin-bottom:5px; font-size:12px; }
   .validate-warn-banner ul { margin:0; padding-left:16px; }
   .validate-warn-banner li { margin:2px 0; line-height:1.5; }
-
-  /* ── Section 17 ESG Disclosure Score ───────────────── */
-  .esg-composite-block { display:flex; align-items:center; gap:18px; padding:14px 18px;
-                         border-radius:8px; background:var(--surface2); border:1px solid var(--border2);
-                         margin-bottom:18px; }
-  .esg-composite-num   { font-size:36px; font-weight:700; font-family:'JetBrains Mono',monospace;
-                         line-height:1; flex-shrink:0; }
-  .esg-composite-label { font-size:10px; letter-spacing:.09em; text-transform:uppercase;
-                         color:var(--text-dim); margin-bottom:3px; }
-  .esg-composite-text  { font-size:12px; color:var(--text-mid); line-height:1.7;
-                         font-family:'Libre Baskerville',serif; }
-  .esg-score-high      { color:var(--green); }
-  .esg-score-mid       { color:var(--amber); }
-  .esg-score-low       { color:var(--red); }
-
-  .esg-pillars         { display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
-                         margin-bottom:4px; }
-  .esg-pillar          { background:var(--surface2); border:1px solid var(--border2);
-                         border-radius:8px; padding:14px 16px; }
-  .esg-pillar-header   { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; }
-  .esg-pillar-letter   { font-size:22px; font-weight:700; font-family:'JetBrains Mono',monospace;
-                         line-height:1; }
-  .esg-pillar-score    { font-size:20px; font-weight:700; font-family:'JetBrains Mono',monospace; }
-  .esg-pillar-weight   { font-size:9px; color:var(--text-dim); text-transform:uppercase;
-                         letter-spacing:.07em; margin-left:auto; }
-  .esg-bar-track       { height:4px; background:var(--border2); border-radius:3px;
-                         margin-bottom:12px; overflow:hidden; }
-  .esg-bar-fill        { height:100%; border-radius:3px; }
-  .esg-bar-high        { background:var(--green); }
-  .esg-bar-mid         { background:var(--amber); }
-  .esg-bar-low         { background:var(--red); }
-  .esg-list-label      { font-size:9px; text-transform:uppercase; letter-spacing:.08em;
-                         color:var(--text-dim); margin-bottom:4px; margin-top:10px; }
-  .esg-list-label:first-of-type { margin-top:0; }
-  .esg-ul              { margin:0 0 0 13px; padding:0; font-size:11px; color:var(--text-mid);
-                         line-height:1.65; }
-  .esg-ul li           { margin-bottom:2px; }
-  .esg-ul.gaps li      { color:var(--text-dim); font-style:italic; }
 
   /* ── PDF Cover & Part Dividers (injected by exportPDF only) ── */
   .pdf-part-divider { display: none; }
@@ -2723,7 +2684,6 @@ function renderMemo(m) {
       ${buildSection12(m)}
       ${buildSection13(m)}
       ${buildSection16(m)}
-      ${buildSection17(m)}
 
       <div class="memo-disclaimer">
         This memo represents AI-assisted analysis of publicly available SEC filings. This analysis does not constitute investment advice or a commitment to underwrite.
@@ -3318,71 +3278,6 @@ function toggleAcctRow(id) {
   if (tr) tr.classList.toggle("open", isOpen);
 }
 
-function buildSection17(m) {
-  const esg = m.esg_disclosure;
-  if (!esg) return "";
-
-  const composite = esg.composite_score;
-  // Opus may return pillar as a plain string narrative; normalize to object shape
-  const _normPillar = v => typeof v === 'string'
-    ? { score: null, highlights: [], gaps: [], narrative: v }
-    : (v || {});
-  const E = _normPillar(esg.environmental);
-  const S = _normPillar(esg.social);
-  const G = _normPillar(esg.governance);
-
-  const scoreCls = v => v == null ? "esg-score-mid"
-                      : v >= 70   ? "esg-score-high"
-                      : v >= 40   ? "esg-score-mid"
-                      : "esg-score-low";
-
-  const barCls = v => v == null ? "esg-bar-mid"
-                    : v >= 70   ? "esg-bar-high"
-                    : v >= 40   ? "esg-bar-mid"
-                    : "esg-bar-low";
-
-  const compositeBlock = composite != null
-    ? `<div class="esg-composite-block">
-        <div>
-          <div class="esg-composite-label">ESG Disclosure Score</div>
-          <div class="esg-composite-num ${scoreCls(composite)}">${composite.toFixed ? composite.toFixed(1) : composite}<span style="font-size:16px;color:var(--text-dim)">/100</span></div>
-        </div>
-        <div class="esg-composite-text">${esg.disclosure_narrative || ""}</div>
-       </div>`
-    : (esg.disclosure_narrative
-        ? `<p class="memo-prose" style="margin-bottom:14px">${esg.disclosure_narrative}</p>`
-        : "");
-
-  const pillarCard = (letter, label, weight, data) => {
-    const score = data.score;
-    const pct   = score != null ? Math.min(100, Math.max(0, score)) : 0;
-    const hl    = (data.highlights || []).slice(0, 4);
-    const gaps  = (data.gaps       || []).slice(0, 4);
-    const narr  = data.narrative   || "";
-    return `<div class="esg-pillar">
-      <div class="esg-pillar-header">
-        <span class="esg-pillar-letter ${scoreCls(score)}">${letter}</span>
-        <span class="esg-pillar-score ${scoreCls(score)}">${score != null ? score : "—"}</span>
-        <span class="esg-pillar-weight">${label}&nbsp;·&nbsp;${weight}</span>
-      </div>
-      <div class="esg-bar-track"><div class="esg-bar-fill ${barCls(score)}" style="width:${pct}%"></div></div>
-      ${hl.length   ? `<div class="esg-list-label">Disclosed</div><ul class="esg-ul">${hl.map(x => `<li>${x}</li>`).join("")}</ul>`   : ""}
-      ${gaps.length ? `<div class="esg-list-label">Gaps</div><ul class="esg-ul gaps">${gaps.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
-      ${narr && !hl.length && !gaps.length ? `<p style="font-size:11px;color:var(--text-dim);line-height:1.6;margin:6px 0 0">${narr}</p>` : ""}
-    </div>`;
-  };
-
-  return `<div class="memo-section">
-    <h3><span class="section-num">19</span> ESG Disclosure Score</h3>
-    ${compositeBlock}
-    <div class="esg-pillars">
-      ${pillarCard("E", "Environmental", "30%", E)}
-      ${pillarCard("S", "Social",        "35%", S)}
-      ${pillarCard("G", "Governance",    "35%", G)}
-    </div>
-  </div>`;
-}
-
 // ─────────────────────────────────────────────────────────
 // MEMO TAB SWITCHER
 // ─────────────────────────────────────────────────────────
@@ -3451,7 +3346,6 @@ function exportPDF() {
     { secNum: "04", part: "Part II",  title: "Risk Assessment"               },
     { secNum: "06", part: "Part III", title: "Business & Financial Analysis"  },
     { secNum: "13", part: "Part IV",  title: "Deal Structure & Diligence"    },
-    { secNum: "19", part: "Part V",   title: "ESG"                           },
   ];
 
   for (const pd of partDefs) {
@@ -3774,7 +3668,6 @@ function validateMemo(memo) {
     { path: "red_flags",             type: "array"   },
     { path: "valuation",             type: "object"  },
     { path: "accounting_practices",  type: "object"  },
-    { path: "esg_disclosure",        type: "object"  },
   ];
   checks.forEach(function(c) {
     var parts = c.path.split(".");

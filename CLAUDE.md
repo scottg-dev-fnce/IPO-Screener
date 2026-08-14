@@ -232,7 +232,6 @@ COVER PAGE — Executive Summary (no section number; part of cover page)
 16 Comparable IPO Performance
 17 Auditor Quality
 18 Accounting Practices
-19 ESG Disclosure Score
 
 ## PDF EXPORT RULES
 
@@ -241,7 +240,6 @@ COVER PAGE — Executive Summary (no section number; part of cover page)
 - PART II — RISK ASSESSMENT: before section 04
 - PART III — BUSINESS & FINANCIAL ANALYSIS: before section 06
 - PART IV — DEAL STRUCTURE & DILIGENCE: before section 13
-- PART V — ESG: before section 19
 - Format: thick 3px gold rule + part title in small caps, single line,
   no page break
 
@@ -255,7 +253,7 @@ COVER PAGE — Executive Summary (no section number; part of cover page)
 - Suppress narrative paragraph after flag list in PDF
 - Keep full display in browser view unchanged
 
-### Section 19 Accounting Practices (PDF only)
+### Section 18 Accounting Practices (PDF only)
 - Show ONLY items rated Aggressive or Highly Aggressive
 - If all items are Standard/Conservative, show single line:
   "All accounting dimensions rated Standard or Conservative —
@@ -270,16 +268,6 @@ COVER PAGE — Executive Summary (no section number; part of cover page)
 - Sector / Offering / Price Range / Auditor / Filed header row
 - Score gauge + dimension breakdown
 - Amendment banner if applicable
-
-## ESG DISCLOSURE SCORE (Section 20)
-- Modeled on Bloomberg ESG Disclosure Score methodology
-- Score: 0-100 composite
-- Pillars: Environmental (30%), Social (35%), Governance (35%)
-- Scores disclosure quality from S-1, not ESG performance
-- Schema fields: environmental.score, environmental.highlights[],
-  environmental.gaps[], social.score, social.highlights[], social.gaps[],
-  governance.score, governance.highlights[], governance.gaps[],
-  composite_score, disclosure_narrative
 
 ## RED FLAG CODES REFERENCE
 These definitions MUST match the system prompt Red Flag Inference Engine exactly.
@@ -556,8 +544,6 @@ Apply `_sentBullets(safeRender(value))` to any new financial narrative table row
 that may contain multiple sentences.
 
 ### Schema Flexibility Rules (safeRender)
-- `esg_disclosure.environmental/social/governance` may be strings (narrative) or objects
-  → normalized via `_normPillar()` in buildSection17
 - `accounting_practices.*` named keys may be strings or objects → buildSection16 fallback
   handles both; string → description only, no risk_rating badge
 - `macro_sector_context` may be object or JSON-string-of-object → try JSON.parse first
@@ -633,7 +619,7 @@ Decoupled fetcher — identical EDGAR logic but only saves raw text to `raw/` an
 - Contradiction rule: if any red flag text uses auto-PASS language, `recommendation` field MUST be PASS
 
 ### JSON Schema / App Sync
-Schema defined in `SYSTEM_PROMPT` inside `ipo_screener.py`. App reads fields directly — adding or renaming top-level fields requires updating both files. Key app-consumed fields: `recommendation`, `scores.weighted_total`, `red_flags`, `red_flag_count`, `going_concern`, `is_amendment`, `executive_summary`, `accounting_practices`, `esg_disclosure`, `damodaran_comps`, `valuation.live_comps_data`.
+Schema defined in `SYSTEM_PROMPT` inside `ipo_screener.py`. App reads fields directly — adding or renaming top-level fields requires updating both files. Key app-consumed fields: `recommendation`, `scores.weighted_total`, `red_flags`, `red_flag_count`, `going_concern`, `is_amendment`, `executive_summary`, `accounting_practices`, `damodaran_comps`, `valuation.live_comps_data`.
 
 ### Running the Screener
 ```bash
@@ -648,14 +634,14 @@ pip install anthropic requests beautifulsoup4 yfinance  # Dependencies
 After writing any memo JSON, you MUST run this validation before reporting the task complete.
 Do not skip it. Do not report "done" until all checks pass.
 
-### Required top-level sections (all 23 must be present and non-null/non-empty)
+### Required top-level sections (all 22 must be present and non-null/non-empty)
 ```
 business_overview        macro_sector_context     financial_snapshot
 valuation                damodaran_comps          use_of_proceeds
 red_flags                executive_summary        deal_committee_narrative
-accounting_practices     esg_disclosure           management
-management_team          comparable_ipo_performance  lockup_analysis
-lead_underwriters        syndicate_assessment     syndicate_quality
+accounting_practices     management               management_team
+comparable_ipo_performance  lockup_analysis       lead_underwriters
+syndicate_assessment     syndicate_quality
 source_verification      revenue_quality          auditor_analysis
 litigation_regulatory    related_party_flags
 ```
@@ -682,7 +668,7 @@ m = json.load(open(path, encoding='utf-8'))
 REQUIRED = [
     'business_overview','macro_sector_context','financial_snapshot','valuation',
     'damodaran_comps','use_of_proceeds','red_flags','executive_summary',
-    'deal_committee_narrative','accounting_practices','esg_disclosure','management',
+    'deal_committee_narrative','accounting_practices','management',
     'management_team','comparable_ipo_performance','lockup_analysis','lead_underwriters',
     'syndicate_assessment','syndicate_quality','source_verification','revenue_quality',
     'auditor_analysis','litigation_regulatory','related_party_flags',
